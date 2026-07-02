@@ -1,0 +1,41 @@
+name: release
+
+# Dual-publish on a version tag: npmjs (public) + GitHub Packages (public).
+# npmjs is the default registry every public @verevoir consumer already uses;
+# GitHub Packages is where private consumers point the @verevoir scope, so the
+# whole scope must resolve there too (STDIO-523). The npmjs step is gated on an
+# NPM_TOKEN secret so the workflow still publishes to GitHub Packages (built-in
+# token) before that secret is configured.
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Publish to npmjs (public)
+        if: ${{ env.NPM_TOKEN != '' }}
+        run: npm publish --registry https://registry.npmjs.org --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to GitHub Packages (public)
+        run: |
+          printf '//npm.pkg.github.com/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > "$RUNNER_TEMP/.npmrc"
+          npm publish --userconfig "$RUNNER_TEMP/.npmrc" --registry https://npm.pkg.github.com
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

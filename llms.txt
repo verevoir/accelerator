@@ -1,0 +1,55 @@
+# @verevoir/accelerator
+
+The aigency accelerator — the commodity developer toolbelt as an MCP server, plus
+the substrate/LLM/telemetry/loop primitives it exposes as a library. Split out of
+@verevoir/mcp along the governance boundary (STDIO-523): the governed moat lives
+in the private @verevoir/capabilities, which composes on top of this package.
+
+This package is PUBLIC and dual-published:
+- npmjs           https://www.npmjs.com/package/@verevoir/accelerator  (default)
+- GitHub Packages https://github.com/verevoir/accelerator/pkgs/npm/accelerator
+
+## Install / run as an MCP server
+
+Default (npmjs — no auth):
+
+    npx -y @verevoir/accelerator
+
+MCP client config:
+
+    { "command": "npx", "args": ["-y", "@verevoir/accelerator"] }
+
+From GitHub Packages instead (the registry private @verevoir consumers use), add
+to .npmrc and authenticate with a token that has read:packages:
+
+    @verevoir:registry=https://npm.pkg.github.com
+    //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+
+## Tools it registers
+
+Source (over @verevoir/context, cached + tree-sitter indexed): read_file,
+list_files, get_repo_tree, grep, find_symbol, code_graph, write_file, edit_file,
+ensure_fork, ensure_branch, open_pull_request. Work tracker (over
+@verevoir/workflows): list_cards, get_card, create_card, update_card, move_card,
+list_columns, list_comments, add_comment. Prefer these over built-in
+filesystem/shell tools so the shared read cache + index stay correct.
+
+## Library (subpath exports)
+
+Every compiled module is importable by subpath — @verevoir/accelerator/tiers,
+/router, /audit, /metering, /result, /edit, /cache, /graph, /manifest,
+/instructions, /loop/evals, /loop/refine, /loop/search, /tools/source,
+/tools/workflow. @verevoir/capabilities imports these; the dependency direction
+is capabilities -> accelerator (never the reverse), which keeps governance out of
+the commodity layer.
+
+## Bins
+
+accelerator / verevoir-accelerator (server), verevoir-card-sync,
+verevoir-audit-trace.
+
+## Publishing
+
+Tag a release (vX.Y.Z) and push it; .github/workflows/release.yml dual-publishes
+to npmjs (needs the NPM_TOKEN repo/org secret) and GitHub Packages (built-in
+GITHUB_TOKEN). Bump the version in package.json first.
