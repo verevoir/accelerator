@@ -1,0 +1,6 @@
+# Intentionally-malformed test fixtures: these hold non-JSON / non-parseable
+# content on purpose, to exercise the manifest resolver's graceful-degrade
+# paths. Prettier cannot parse them, so it is scoped out here narrowly — valid
+# fixtures stay formatted and checked.
+tests/fixtures/non-json-dir/aigency.json
+tests/fixtures/empty-dir/.gitkeep

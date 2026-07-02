@@ -1,0 +1,39 @@
+name: Card sync
+
+# Move the work-tracker card from the PR lifecycle (STDIO-236): a PR opening
+# moves its card to "In preview", a merge moves it to "Done". Deterministic and
+# keyed off the work-item id in the branch — not an agent remembering to do it.
+# Best-effort: the step never fails the PR (board sync must never block a merge).
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Move card to "In preview" (PR opened)
+        if: github.event.action != 'closed'
+        run: node dist/card-sync-bin.js
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          BOARD_URL: ${{ vars.BOARD_URL }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+          TARGET_COLUMN: In preview
+
+      - name: Move card to "Done" (PR merged)
+        if: github.event.action == 'closed' && github.event.pull_request.merged
+        run: node dist/card-sync-bin.js
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          BOARD_URL: ${{ vars.BOARD_URL }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+          TARGET_COLUMN: Done

@@ -1,0 +1,81 @@
+{
+  "name": "@verevoir/accelerator",
+  "version": "0.1.0",
+  "description": "The aigency accelerator: commodity dev tools (cached source reads/writes via @verevoir/context, work-tracker ops via @verevoir/workflows) as an MCP server, plus the substrate + LLM/telemetry/loop primitives exposed as library subpath exports for @verevoir/capabilities to compose on.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "accelerator": "./dist/bin.js",
+    "verevoir-accelerator": "./dist/bin.js",
+    "verevoir-card-sync": "./dist/card-sync-bin.js",
+    "verevoir-audit-trace": "./dist/audit-trace-bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "import": "./dist/*.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "instructions.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
+    "start": "node dist/bin.js",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.2",
+    "@google/genai": "^2.8.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@notionhq/client": "^5.22.0",
+    "@verevoir/context": "^0.11.2",
+    "@verevoir/llm": "^0.17.0",
+    "@verevoir/sources": "^0.6.0",
+    "@verevoir/workflows": "^0.6.0",
+    "openai": "^6.43.0",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-c": "0.23.2",
+    "tree-sitter-c-sharp": "0.23.1",
+    "tree-sitter-cpp": "0.23.2",
+    "tree-sitter-go": "0.23.4",
+    "tree-sitter-java": "0.23.5",
+    "tree-sitter-javascript": "^0.23.1",
+    "tree-sitter-python": "0.23.4",
+    "tree-sitter-scala": "0.24.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "yaml": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "prettier": "^3",
+    "typescript": "^5",
+    "vitest": "^4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/verevoir/accelerator.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "vite": "^8.0.16"
+  }
+}

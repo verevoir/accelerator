@@ -1,0 +1,30 @@
+name: Card reconcile
+
+# Periodic self-healing board reconciler (STDIO-407) — the safety net under the
+# event-driven card-sync (STDIO-236). On a schedule it recomputes each card's
+# desired column from live PR state across the org and fixes any drift the
+# events missed (a dropped webhook, or a PR closed without merging that stranded
+# its card). Best-effort: the job never fails on a board hiccup.
+on:
+  schedule:
+    - cron: '17 */6 * * *' # every 6 hours, off the hour to avoid the cron rush
+  workflow_dispatch: {} # and on demand
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Reconcile the board toward PR state
+        run: node dist/card-reconcile-bin.js
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          BOARD_URL: ${{ vars.BOARD_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
