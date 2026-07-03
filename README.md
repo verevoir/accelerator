@@ -91,3 +91,5 @@ credential).
 ## Licence
 
 Apache-2.0.
+
+<!-- app-token smoke 3 -->
