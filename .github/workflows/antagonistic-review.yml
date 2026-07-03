@@ -38,7 +38,7 @@ jobs:
     env:
       # One token does both: clone the private @verevoir/capabilities MCP and read
       # the corpus via the GitHub adapter. The built-in token can't clone cross-repo.
-      GITHUB_TOKEN: ${{ secrets.GHP_READ_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.CUTOVER_PUSH_TOKEN }}
     steps:
       - name: Fail loud if the reviewer has no model credential
         env:
