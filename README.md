@@ -39,3 +39,5 @@ dependency direction that keeps governance out of the commodity layer.
 ## Licence
 
 Apache-2.0.
+
+> Consumed via npm (`@verevoir/accelerator`) or git-install (`npx github:verevoir/accelerator`).
