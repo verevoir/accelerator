@@ -64,6 +64,14 @@ jobs:
         if: ${{ env.GITHUB_TOKEN != '' }}
         run: git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
 
+      # Build the reviewer MCP once, as a normal step (clones capabilities +
+      # accelerator and builds both). Installing the bin globally means the MCP
+      # then starts instantly at review time — a git-install at MCP-init is too
+      # slow for the action window, which left provision unavailable. Fails loud
+      # here if the clone/build breaks, instead of a silent "no rubric".
+      - name: Pre-build the reviewer MCP (@verevoir/capabilities)
+        run: npm install -g github:verevoir/capabilities#v0.1.0
+
       - name: Adversarial review against the provisioned practices
         id: review
         uses: anthropics/claude-code-base-action@beta
