@@ -60,21 +60,24 @@ jobs:
 
       # `npx github:verevoir/capabilities` (spawned per mcp.json) has to CLONE that
       # private repo. Route git over HTTPS with the same token.
-      - name: Allow npx to clone the private capabilities MCP
+      - name: Rewrite ssh github URLs to https (for the public accelerator dep)
         if: ${{ env.GITHUB_TOKEN != '' }}
         run: |
-          B="https://x-access-token:${GITHUB_TOKEN}@github.com/"
-          git config --global url."$B".insteadOf "https://github.com/"
-          git config --global --add url."$B".insteadOf "ssh://git@github.com/"
-          git config --global --add url."$B".insteadOf "git@github.com:"
+          git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+          git config --global --add url."https://github.com/".insteadOf "git@github.com:"
 
-      # Build the reviewer MCP once, as a normal step (clones capabilities +
-      # accelerator and builds both). Installing the bin globally means the MCP
-      # then starts instantly at review time — a git-install at MCP-init is too
-      # slow for the action window, which left provision unavailable. Fails loud
-      # here if the clone/build breaks, instead of a silent "no rubric".
       - name: Pre-build the reviewer MCP (@verevoir/capabilities)
-        run: npm install -g github:verevoir/capabilities#v0.1.0
+        if: ${{ env.GITHUB_TOKEN != '' }}
+        run: |
+          # Definitive auth diagnostic: 200 = token can read capabilities, 404 = it
+          # cannot, 401 = bad token. (The token in the header is masked in logs.)
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/repos/verevoir/capabilities)
+          echo "capabilities API access with this token -> HTTP $code"
+          # Explicit clone of the private reviewer MCP with the token, then global install
+          # so it starts instantly at review time. accelerator (its dep) is public and
+          # resolves over https via the rewrite above.
+          git clone --depth 1 --branch v0.1.0 "https://x-access-token:${GITHUB_TOKEN}@github.com/verevoir/capabilities.git" "$RUNNER_TEMP/caps"
+          npm install -g "$RUNNER_TEMP/caps"
 
       - name: Adversarial review against the provisioned practices
         id: review
