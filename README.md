@@ -93,3 +93,4 @@ credential).
 Apache-2.0.
 
 <!-- app-token smoke 3 -->
+<!-- retry after verevoir install -->
