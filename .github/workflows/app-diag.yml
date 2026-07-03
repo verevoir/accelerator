@@ -1,0 +1,20 @@
+name: app-diag
+on:
+  workflow_dispatch: {}
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Where is the App installed now
+        env:
+          APP_ID: ${{ secrets.VEREVOIR_APP_ID }}
+          APP_KEY: ${{ secrets.VEREVOIR_APP_PRIVATE_KEY }}
+        run: |
+          now=$(date +%s); iat=$((now-60)); exp=$((now+540))
+          b64(){ openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          h=$(printf '{"alg":"RS256","typ":"JWT"}' | b64)
+          p=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$iat" "$exp" "$APP_ID" | b64)
+          s=$(printf '%s.%s' "$h" "$p" | openssl dgst -sha256 -sign <(printf '%s' "$APP_KEY") -binary | b64)
+          jwt="$h.$p.$s"
+          echo "=== installations (accounts the App can act on) ==="
+          curl -s -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" https://api.github.com/app/installations | jq '[.[] | {account: .account.login, selection: .repository_selection}]'
