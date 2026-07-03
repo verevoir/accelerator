@@ -1,6 +1,6 @@
 {
   "name": "@verevoir/accelerator",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The aigency accelerator: commodity dev tools (cached source reads/writes via @verevoir/context, work-tracker ops via @verevoir/workflows) as an MCP server, plus the substrate + LLM/telemetry/loop primitives exposed as library subpath exports for @verevoir/capabilities to compose on.",
   "license": "Apache-2.0",
   "type": "module",
@@ -36,7 +36,8 @@
     "lint": "prettier --check .",
     "format": "prettier --write .",
     "start": "node dist/bin.js",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
