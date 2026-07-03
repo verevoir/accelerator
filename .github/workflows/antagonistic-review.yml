@@ -69,15 +69,15 @@ jobs:
       - name: Pre-build the reviewer MCP (@verevoir/capabilities)
         if: ${{ env.GITHUB_TOKEN != '' }}
         run: |
-          # Definitive auth diagnostic: 200 = token can read capabilities, 404 = it
-          # cannot, 401 = bad token. (The token in the header is masked in logs.)
           code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: token ${GITHUB_TOKEN}" https://api.github.com/repos/verevoir/capabilities)
           echo "capabilities API access with this token -> HTTP $code"
-          # Explicit clone of the private reviewer MCP with the token, then global install
-          # so it starts instantly at review time. accelerator (its dep) is public and
-          # resolves over https via the rewrite above.
-          git clone --depth 1 --branch v0.1.0 "https://x-access-token:${GITHUB_TOKEN}@github.com/verevoir/capabilities.git" "$RUNNER_TEMP/caps"
-          npm install -g "$RUNNER_TEMP/caps"
+          D="/home/runner/.antagonistic-review-mcp"
+          rm -rf "$D"
+          git clone --depth 1 --branch v0.1.0 "https://x-access-token:${GITHUB_TOKEN}@github.com/verevoir/capabilities.git" "$D"
+          # full install (incl. devDeps) so prepare/tsc can build capabilities and its
+          # accelerator dep; `npm install -g <path>` skips devDeps and the build fails.
+          ( cd "$D" && npm install --no-audit --no-fund )
+          test -f "$D/dist/bin.js" && echo "reviewer MCP built at $D/dist/bin.js"
 
       - name: Adversarial review against the provisioned practices
         id: review
