@@ -1,11 +1,12 @@
-// @verevoir/accelerator/edit — pure surgical-edit logic for the `edit_file` tool.
+// @verevoir/accelerator/edit — pure surgical-edit ops over file content.
 //
-// Mirrors the built-in Edit's semantics: replace an exact `oldString`
-// with `newString`, requiring a unique match unless `replaceAll`. Pure
-// (string in, string out) so it's trivially testable; the tool wires it
-// to a source adapter's read + write. Uses split/join rather than
-// String.replace so a `$` in `newString` can't trigger replacement-
-// pattern expansion ($&, $1, …).
+// A family of pure (string in, EditResult out) operations the mutation tools
+// wire to a source adapter's read + write: applyEdit (exact oldString→newString,
+// unique unless replaceAll), applyMultiEdit (an atomic sequence of edits),
+// applyInsert (before/after a unique anchor) and applyDeleteBlock (remove a
+// unique block). Each throws rather than silently no-op on empty / absent /
+// ambiguous input, and uses split/join rather than String.replace so a `$` in
+// inserted text can't trigger replacement-pattern expansion ($&, $1, …).
 
 export interface EditResult {
   content: string;
@@ -39,4 +40,74 @@ export function applyEdit(
     );
   }
   return { content: parts.join(newString), replacements };
+}
+
+/** Apply edits in order (each an applyEdit — unique match unless replaceAll);
+ * return the total replacement count. Throws, applying nothing, if any edit
+ * fails its match or if `edits` is empty. */
+export function applyMultiEdit(
+  content: string,
+  edits: { oldString: string; newString: string; replaceAll?: boolean }[]
+): EditResult {
+  if (edits.length === 0) {
+    throw new Error('applyMultiEdit: edits array must not be empty');
+  }
+  let working = content;
+  let totalReplacements = 0;
+  for (const edit of edits) {
+    const result = applyEdit(working, edit.oldString, edit.newString, edit.replaceAll ?? false);
+    working = result.content;
+    totalReplacements += result.replacements;
+  }
+  return { content: working, replacements: totalReplacements };
+}
+
+/** Insert `text` before/after the unique occurrence of `anchor`. Throws if
+ * `anchor` or `text` is empty, or `anchor` is absent or non-unique. */
+export function applyInsert(
+  content: string,
+  anchor: string,
+  text: string,
+  position: 'before' | 'after'
+): EditResult {
+  if (anchor === '') {
+    throw new Error('applyInsert: anchor must not be empty');
+  }
+  if (text === '') {
+    throw new Error('applyInsert: text must not be empty — nothing to insert');
+  }
+  const parts = content.split(anchor);
+  const matches = parts.length - 1;
+  if (matches === 0) {
+    throw new Error('applyInsert: anchor not found in the file');
+  }
+  if (matches > 1) {
+    throw new Error(
+      `applyInsert: anchor matches ${matches} times — add surrounding context to make it unique`
+    );
+  }
+  if (position === 'before') {
+    return { content: parts[0] + text + anchor + parts[1], replacements: 1 };
+  } else {
+    return { content: parts[0] + anchor + text + parts[1], replacements: 1 };
+  }
+}
+
+/** Remove the UNIQUE occurrence of `block` from `content`. Throw a clear
+ * Error on empty / not-found / ambiguous (more than one match). */
+export function applyDeleteBlock(content: string, block: string): EditResult {
+  if (block === '') {
+    throw new Error('applyDeleteBlock: block must not be empty');
+  }
+  const parts = content.split(block);
+  const matches = parts.length - 1;
+  if (matches === 0) {
+    throw new Error('applyDeleteBlock: block not found in the file');
+  }
+  if (matches > 1) {
+    throw new Error(
+      `applyDeleteBlock: block matches ${matches} times — add surrounding context to make it unique`
+    );
+  }
+  return { content: parts[0] + parts[1], replacements: 1 };
 }
