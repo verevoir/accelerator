@@ -1,6 +1,6 @@
 {
   "name": "@verevoir/accelerator",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The aigency accelerator: commodity dev tools (cached source reads/writes via @verevoir/context, work-tracker ops via @verevoir/workflows) as an MCP server, plus the substrate + LLM/telemetry/loop primitives exposed as library subpath exports for @verevoir/capabilities to compose on.",
   "license": "Apache-2.0",
   "type": "module",
