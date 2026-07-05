@@ -1,5 +1,11 @@
 import { pickSourceAdapter, resolveSourceEnv } from './router.js';
-import { applyEdit } from './edit.js';
+import {
+  applyEdit,
+  applyMultiEdit,
+  applyInsert,
+  applyDeleteBlock,
+  type EditResult,
+} from './edit.js';
 import { invalidateWrittenFile } from './cache.js';
 import { contextStore, type ContextStore } from '@verevoir/context';
 
@@ -26,11 +32,30 @@ export async function writeSourceFile(
 }
 
 /**
- * Read the file, apply a unique-anchor string edit, write it back, and invalidate
- * the read cache. Returns the replacement count. `store` is injectable for tests
- * (defaults to the shared singleton).
+ * The shared mutation cycle: read the file, apply a pure edit op to its content,
+ * write it back, and invalidate the read cache. Every string-edit tool is this
+ * cycle with a different pure op; all the ops return an `EditResult`, so one
+ * wrapper drives them. `store` is injectable for tests.
  */
-export async function editSourceFile(
+async function mutateSourceFile(
+  sourceUrl: string,
+  path: string,
+  apply: (content: string) => EditResult,
+  branch: string,
+  commitMessage: string,
+  store: ContextStore = contextStore
+): Promise<{ replacements: number }> {
+  const adapter = await pickSourceAdapter(sourceUrl);
+  const env = resolveSourceEnv(sourceUrl);
+  const { content } = await adapter.readFile(env, sourceUrl, path, branch || undefined);
+  const result = apply(content);
+  await adapter.writeFile(env, sourceUrl, path, result.content, branch, commitMessage);
+  invalidateWrittenFile(sourceUrl, path, branch, store);
+  return { replacements: result.replacements };
+}
+
+/** Read → exact-string edit (unique unless replaceAll) → write → invalidate. */
+export function editSourceFile(
   sourceUrl: string,
   path: string,
   oldString: string,
@@ -40,11 +65,71 @@ export async function editSourceFile(
   commitMessage: string,
   store: ContextStore = contextStore
 ): Promise<{ replacements: number }> {
-  const adapter = await pickSourceAdapter(sourceUrl);
-  const env = resolveSourceEnv(sourceUrl);
-  const { content } = await adapter.readFile(env, sourceUrl, path, branch || undefined);
-  const result = applyEdit(content, oldString, newString, replaceAll);
-  await adapter.writeFile(env, sourceUrl, path, result.content, branch, commitMessage);
-  invalidateWrittenFile(sourceUrl, path, branch, store);
-  return { replacements: result.replacements };
+  return mutateSourceFile(
+    sourceUrl,
+    path,
+    (content) => applyEdit(content, oldString, newString, replaceAll),
+    branch,
+    commitMessage,
+    store
+  );
+}
+
+/** Read → atomic list of edits (all-or-nothing) → write → invalidate. */
+export function multiEditSourceFile(
+  sourceUrl: string,
+  path: string,
+  edits: { oldString: string; newString: string; replaceAll?: boolean }[],
+  branch: string,
+  commitMessage: string,
+  store: ContextStore = contextStore
+): Promise<{ replacements: number }> {
+  return mutateSourceFile(
+    sourceUrl,
+    path,
+    (content) => applyMultiEdit(content, edits),
+    branch,
+    commitMessage,
+    store
+  );
+}
+
+/** Read → insert text before/after a unique anchor → write → invalidate. */
+export function insertSourceFile(
+  sourceUrl: string,
+  path: string,
+  anchor: string,
+  text: string,
+  position: 'before' | 'after',
+  branch: string,
+  commitMessage: string,
+  store: ContextStore = contextStore
+): Promise<{ replacements: number }> {
+  return mutateSourceFile(
+    sourceUrl,
+    path,
+    (content) => applyInsert(content, anchor, text, position),
+    branch,
+    commitMessage,
+    store
+  );
+}
+
+/** Read → remove a unique block → write → invalidate. */
+export function deleteBlockSourceFile(
+  sourceUrl: string,
+  path: string,
+  block: string,
+  branch: string,
+  commitMessage: string,
+  store: ContextStore = contextStore
+): Promise<{ replacements: number }> {
+  return mutateSourceFile(
+    sourceUrl,
+    path,
+    (content) => applyDeleteBlock(content, block),
+    branch,
+    commitMessage,
+    store
+  );
 }
