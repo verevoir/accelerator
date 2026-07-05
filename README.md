@@ -38,13 +38,13 @@ config and a needless secret exposure. That asymmetry is deliberate: the split
 lets you hand the commodity server the keys that read your code and boards, and
 keep the model keys on the moat.
 
-| Env var                                                | Why the server needs it                                                                                                                                                                     |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GITHUB_TOKEN`                                         | GitHub source adapter — `read_file`/`grep`/`find_symbol`/`code_graph`, and `write_file`/`edit_file`/`multi_edit`/`insert`/`delete_block`/`ensure_fork`/`ensure_branch`/`open_pull_request`. |
-| `NOTION_API_KEY`                                       | Notion source (pages as a file tree) **and** the Notion work-tracker board (`list_cards`/`create_card`/…).                                                                                  |
-| `TRELLO_API_KEY`, `TRELLO_API_TOKEN`, `TRELLO_REFERER` | Trello work-tracker backend, when the board is Trello.                                                                                                                                      |
-| `AIGENCY_AUDIT`, `AIGENCY_AUDIT_DIR`                   | Emit audit spans (the shared telemetry lib lives here) and where to write them.                                                                                                             |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                          | OTLP export of those spans to a collector.                                                                                                                                                  |
+| Env var                                                | Why the server needs it                                                                                                                                                                                    |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_TOKEN`                                         | GitHub source adapter — `read_file`/`grep`/`find_symbol`/`code_graph`, and `write_file`/`edit_file`/`multi_edit`/`insert`/`delete_block`/`commit_files`/`ensure_fork`/`ensure_branch`/`open_pull_request`. |
+| `NOTION_API_KEY`                                       | Notion source (pages as a file tree) **and** the Notion work-tracker board (`list_cards`/`create_card`/…).                                                                                                 |
+| `TRELLO_API_KEY`, `TRELLO_API_TOKEN`, `TRELLO_REFERER` | Trello work-tracker backend, when the board is Trello.                                                                                                                                                     |
+| `AIGENCY_AUDIT`, `AIGENCY_AUDIT_DIR`                   | Emit audit spans (the shared telemetry lib lives here) and where to write them.                                                                                                                            |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                          | OTLP export of those spans to a collector.                                                                                                                                                                 |
 
 Local paths and public GitHub repos need no token; the tokens gate private
 sources and writes.
@@ -53,8 +53,8 @@ sources and writes.
 
 **Source** (cached + tree-sitter indexed via `@verevoir/context`): `read_file`,
 `list_files`, `get_repo_tree`, `grep`, `find_symbol`, `code_graph`, `write_file`,
-`edit_file`, `multi_edit`, `insert`, `delete_block`, `ensure_fork`, `ensure_branch`,
-`open_pull_request`.
+`edit_file`, `multi_edit`, `insert`, `delete_block`, `commit_files`, `ensure_fork`,
+`ensure_branch`, `open_pull_request`.
 **Work tracker** (via `@verevoir/workflows`): `list_cards`, `get_card`,
 `create_card`, `update_card`, `move_card`, `list_columns`, `list_comments`,
 `add_comment`.

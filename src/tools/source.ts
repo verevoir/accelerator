@@ -9,6 +9,7 @@ import {
   multiEditSourceFile,
   insertSourceFile,
   deleteBlockSourceFile,
+  commitFilesSource,
 } from '../mutate.js';
 import { queryCodeGraph } from '../graph.js';
 import { jsonText } from '../result.js';
@@ -448,6 +449,52 @@ export function registerSourceTools(server: McpServer): void {
         content: [
           { type: 'text', text: jsonText({ ok: true, replacements: result.replacements }) },
         ],
+      };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // commit_files
+  // -------------------------------------------------------------------------
+  server.registerTool(
+    'commit_files',
+    {
+      description:
+        'Commit MULTIPLE files together on `branch` in ONE operation — the multi-file twin of write_file. Prefer this over several write_file calls when a change spans files: on GitHub it is a single ATOMIC commit (blobs → tree → commit → ref move; the ref advances only after every step succeeds, so a failure leaves no partial state) instead of N separate commits; on a local git repo it writes the files then stages + commits them (best-effort — a git failure throws but the already-written files are NOT rolled back, so inspect the working tree on error); on Notion it degrades to sequential writes. Like the other writers it drops each written file from the shared read cache. `files` must be non-empty. GitHub requires `branch` + `commitMessage`; a local git repo uses `branch` to create/advance; a non-git path or Notion writes directly. Returns { ok: true, files } — the count committed.',
+      inputSchema: {
+        sourceUrl: z
+          .string()
+          .describe(
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+          ),
+        files: z
+          .array(
+            z.object({
+              path: z.string().describe('File path within the source.'),
+              content: z.string().describe('Full file content to write.'),
+            })
+          )
+          .min(1, 'commit_files requires at least one file')
+          .describe('The files to commit together, atomically.'),
+        branch: z
+          .string()
+          .optional()
+          .describe(
+            'Branch to commit to. Required for GitHub sources; used by a local git repo to create/advance the branch; ignored for Notion + non-git paths.'
+          ),
+        commitMessage: z
+          .string()
+          .optional()
+          .describe(
+            'Commit message. Required for GitHub sources; used by a local git repo; ignored for Notion + non-git paths.'
+          ),
+      },
+    },
+    async ({ sourceUrl, files, branch, commitMessage }) => {
+      const commit = commitArgs(sourceUrl, branch, commitMessage);
+      await commitFilesSource(sourceUrl, commit.branch, files, commit.commitMessage);
+      return {
+        content: [{ type: 'text', text: jsonText({ ok: true, files: files.length }) }],
       };
     }
   );

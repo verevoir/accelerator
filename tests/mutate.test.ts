@@ -10,6 +10,7 @@ import {
   multiEditSourceFile,
   insertSourceFile,
   deleteBlockSourceFile,
+  commitFilesSource,
 } from '../src/mutate.js';
 
 describe('mutate cycle (local source)', () => {
@@ -188,5 +189,39 @@ describe('mutate cycle (local source)', () => {
     await expect(deleteBlockSourceFile(dir, 'd.txt', 'x', '', '')).rejects.toThrow(
       /matches 2 times/
     );
+  });
+
+  it('commitFilesSource writes the whole file set to the source', async () => {
+    await commitFilesSource(
+      dir,
+      '',
+      [
+        { path: 'x.txt', content: 'X' },
+        { path: 'sub/y.txt', content: 'Y' },
+      ],
+      ''
+    );
+    expect(readFileSync(join(dir, 'x.txt'), 'utf8')).toBe('X');
+    expect(readFileSync(join(dir, 'sub/y.txt'), 'utf8')).toBe('Y');
+  });
+
+  it('invalidates the read cache for every committed file (isolated store)', async () => {
+    const store = createContextStore();
+    const kx = { sourceId: dir, version: '', itemId: 'x.txt' };
+    const ky = { sourceId: dir, version: '', itemId: 'y.txt' };
+    store.setContent(kx, 'stale');
+    store.setContent(ky, 'stale');
+    await commitFilesSource(
+      dir,
+      '',
+      [
+        { path: 'x.txt', content: 'X' },
+        { path: 'y.txt', content: 'Y' },
+      ],
+      '',
+      store
+    );
+    expect(store.getContent(kx)).toBeUndefined();
+    expect(store.getContent(ky)).toBeUndefined();
   });
 });

@@ -32,6 +32,31 @@ export async function writeSourceFile(
 }
 
 /**
+ * Commit multiple files together on `branch` in one atomic operation, per the
+ * adapter's `commitFiles` contract (GitHub-atomic; fs best-effort — writes then
+ * stages/commits; Notion degrades to sequential writes), then invalidate the
+ * read cache for each written file (dual-scope, via `invalidateWrittenFile`).
+ * The multi-file twin of `writeSourceFile` — `files` is the already-built set,
+ * so it skips the read→apply→write mutate cycle the string-edit ops use.
+ * `branch`/`commitMessage` are the resolved `commitArgs`. `store` is injectable
+ * for tests.
+ */
+export async function commitFilesSource(
+  sourceUrl: string,
+  branch: string,
+  files: { path: string; content: string }[],
+  commitMessage: string,
+  store: ContextStore = contextStore
+): Promise<void> {
+  const adapter = await pickSourceAdapter(sourceUrl);
+  const env = resolveSourceEnv(sourceUrl);
+  await adapter.commitFiles(env, sourceUrl, branch, files, commitMessage);
+  for (const { path } of files) {
+    invalidateWrittenFile(sourceUrl, path, branch, store);
+  }
+}
+
+/**
  * The shared mutation cycle: read the file, apply a pure edit op to its content,
  * write it back, and invalidate the read cache. Every string-edit tool is this
  * cycle with a different pure op; all the ops return an `EditResult`, so one
