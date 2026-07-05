@@ -99,3 +99,43 @@ describe('edit-op tools (multi_edit / insert / delete_block)', () => {
     expect(a.writeFile).not.toHaveBeenCalled();
   });
 });
+
+describe('commit_files tool', () => {
+  it('registers commit_files', () => {
+    expect(Object.keys(harness())).toEqual(expect.arrayContaining(['commit_files']));
+  });
+
+  it('commits the whole file set through the adapter and returns the count', async () => {
+    const commitFiles = vi.fn(async () => undefined);
+    vi.mocked(pickSourceAdapter).mockResolvedValue({ commitFiles } as never);
+    const files = [
+      { path: 'a.ts', content: 'A' },
+      { path: 'sub/b.ts', content: 'B' },
+    ];
+    const res = await harness().commit_files({
+      sourceUrl: '/local',
+      files,
+      branch: 'feature',
+      commitMessage: 'msg',
+    });
+    // One atomic adapter call carrying the whole set — not N writeFile calls.
+    expect(commitFiles).toHaveBeenCalledTimes(1);
+    expect(commitFiles).toHaveBeenCalledWith(expect.anything(), '/local', 'feature', files, 'msg');
+    expect(reply(res)).toEqual({ ok: true, files: 2 });
+  });
+
+  it('propagates an adapter commit failure through the handler', async () => {
+    const commitFiles = vi.fn(async () => {
+      throw new Error('ref update rejected');
+    });
+    vi.mocked(pickSourceAdapter).mockResolvedValue({ commitFiles } as never);
+    await expect(
+      harness().commit_files({
+        sourceUrl: '/local',
+        files: [{ path: 'a.ts', content: 'A' }],
+        branch: 'feature',
+        commitMessage: 'msg',
+      })
+    ).rejects.toThrow(/ref update rejected/);
+  });
+});

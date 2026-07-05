@@ -32,6 +32,31 @@ export async function writeSourceFile(
 }
 
 /**
+ * The multi-file twin of `writeSourceFile`: commit `files` together via the
+ * adapter's `commitFiles`, then invalidate the read cache for each written file
+ * (dual-scope, via `invalidateWrittenFile`). `files` is the already-built set,
+ * so it skips the read→apply→write cycle the string-edit ops use. The
+ * invalidation runs only after a successful commit — so a failed (possibly
+ * partial) commit leaves the cache untouched, as the sibling ops do.
+ * Per-backend atomicity is the adapter's contract (see the `commit_files` tool
+ * description). `store` is injectable for tests.
+ */
+export async function commitFilesSource(
+  sourceUrl: string,
+  branch: string,
+  files: { path: string; content: string }[],
+  commitMessage: string,
+  store: ContextStore = contextStore
+): Promise<void> {
+  const adapter = await pickSourceAdapter(sourceUrl);
+  const env = resolveSourceEnv(sourceUrl);
+  await adapter.commitFiles(env, sourceUrl, branch, files, commitMessage);
+  for (const { path } of files) {
+    invalidateWrittenFile(sourceUrl, path, branch, store);
+  }
+}
+
+/**
  * The shared mutation cycle: read the file, apply a pure edit op to its content,
  * write it back, and invalidate the read cache. Every string-edit tool is this
  * cycle with a different pure op; all the ops return an `EditResult`, so one

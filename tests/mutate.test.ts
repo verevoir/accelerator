@@ -10,6 +10,7 @@ import {
   multiEditSourceFile,
   insertSourceFile,
   deleteBlockSourceFile,
+  commitFilesSource,
 } from '../src/mutate.js';
 
 describe('mutate cycle (local source)', () => {
@@ -188,5 +189,68 @@ describe('mutate cycle (local source)', () => {
     await expect(deleteBlockSourceFile(dir, 'd.txt', 'x', '', '')).rejects.toThrow(
       /matches 2 times/
     );
+  });
+
+  it('commitFilesSource writes the whole file set to the source', async () => {
+    await commitFilesSource(
+      dir,
+      '',
+      [
+        { path: 'x.txt', content: 'X' },
+        { path: 'sub/y.txt', content: 'Y' },
+      ],
+      ''
+    );
+    expect(readFileSync(join(dir, 'x.txt'), 'utf8')).toBe('X');
+    expect(readFileSync(join(dir, 'sub/y.txt'), 'utf8')).toBe('Y');
+  });
+
+  it('invalidates the read cache for every committed file (isolated store)', async () => {
+    const store = createContextStore();
+    const kx = { sourceId: dir, version: '', itemId: 'x.txt' };
+    const ky = { sourceId: dir, version: '', itemId: 'y.txt' };
+    store.setContent(kx, 'stale');
+    store.setContent(ky, 'stale');
+    await commitFilesSource(
+      dir,
+      '',
+      [
+        { path: 'x.txt', content: 'X' },
+        { path: 'y.txt', content: 'Y' },
+      ],
+      '',
+      store
+    );
+    expect(store.getContent(kx)).toBeUndefined();
+    expect(store.getContent(ky)).toBeUndefined();
+  });
+
+  it('on a partial write failure, leaves files written but does not invalidate the cache', async () => {
+    // A file where a directory is needed makes the second write's mkdir fail, so
+    // commitFiles throws AFTER writing the first file — the deliberately
+    // non-atomic local path (files are not rolled back; see the SourceAdapter
+    // contract). The invalidation loop runs only after a clean commit, so it
+    // never runs here.
+    writeFileSync(join(dir, 'blocker'), 'not a directory');
+    const store = createContextStore();
+    const kOk = { sourceId: dir, version: '', itemId: 'ok.txt' };
+    store.setContent(kOk, 'still valid');
+    await expect(
+      commitFilesSource(
+        dir,
+        '',
+        [
+          { path: 'ok.txt', content: 'written' },
+          { path: 'blocker/x.txt', content: 'fails' },
+        ],
+        '',
+        store
+      )
+    ).rejects.toThrow();
+    // The first file landed on disk (partial write — the fs path is not atomic)…
+    expect(readFileSync(join(dir, 'ok.txt'), 'utf8')).toBe('written');
+    // …but the stale cache entry survives, since invalidation only follows a
+    // clean commit — consistent with the other mutate ops' failure behaviour.
+    expect(store.getContent(kOk)).toBe('still valid');
   });
 });
