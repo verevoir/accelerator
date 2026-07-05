@@ -4,7 +4,13 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createContextStore } from '@verevoir/context';
-import { writeSourceFile, editSourceFile } from '../src/mutate.js';
+import {
+  writeSourceFile,
+  editSourceFile,
+  multiEditSourceFile,
+  insertSourceFile,
+  deleteBlockSourceFile,
+} from '../src/mutate.js';
 
 describe('mutate cycle (local source)', () => {
   let dir: string;
@@ -71,6 +77,115 @@ describe('mutate cycle (local source)', () => {
   it('editSourceFile propagates applyEdit throws (non-unique anchor without replaceAll)', async () => {
     writeFileSync(join(dir, 'a.txt'), 'x x');
     await expect(editSourceFile(dir, 'a.txt', 'x', 'y', false, '', '')).rejects.toThrow(
+      /matches 2 times/
+    );
+  });
+
+  it('multiEditSourceFile applies an atomic list of edits and reports the total count', async () => {
+    writeFileSync(join(dir, 'm.txt'), 'foo bar foo baz');
+    const r = await multiEditSourceFile(
+      dir,
+      'm.txt',
+      [
+        { oldString: 'foo', newString: 'FOO', replaceAll: true },
+        { oldString: 'bar', newString: 'BAR' },
+      ],
+      '',
+      ''
+    );
+    expect(r.replacements).toBe(3);
+    expect(readFileSync(join(dir, 'm.txt'), 'utf8')).toBe('FOO BAR FOO baz');
+  });
+
+  it('multiEditSourceFile writes nothing when one edit in the list fails (atomic on disk)', async () => {
+    writeFileSync(join(dir, 'm.txt'), 'a b c');
+    await expect(
+      multiEditSourceFile(
+        dir,
+        'm.txt',
+        [
+          { oldString: 'a', newString: 'A' },
+          { oldString: 'z', newString: 'Z' },
+        ],
+        '',
+        ''
+      )
+    ).rejects.toThrow(/not found/);
+    // applyMultiEdit throws before writeFile runs, so the file on disk is untouched.
+    expect(readFileSync(join(dir, 'm.txt'), 'utf8')).toBe('a b c');
+  });
+
+  it('insertSourceFile inserts text after a unique anchor', async () => {
+    writeFileSync(join(dir, 'i.txt'), 'hello world');
+    const r = await insertSourceFile(dir, 'i.txt', 'hello', ' there', 'after', '', '');
+    expect(r.replacements).toBe(1);
+    expect(readFileSync(join(dir, 'i.txt'), 'utf8')).toBe('hello there world');
+  });
+
+  it('deleteBlockSourceFile removes a unique block', async () => {
+    writeFileSync(join(dir, 'd.txt'), 'keep DROP keep');
+    const r = await deleteBlockSourceFile(dir, 'd.txt', ' DROP', '', '');
+    expect(r.replacements).toBe(1);
+    expect(readFileSync(join(dir, 'd.txt'), 'utf8')).toBe('keep keep');
+  });
+
+  it('invalidates the read cache after a multi_edit (isolated store)', async () => {
+    writeFileSync(join(dir, 'm.txt'), 'alpha beta');
+    const store = createContextStore();
+    const key = { sourceId: dir, version: '', itemId: 'm.txt' };
+    store.setContent(key, 'stale cached content');
+    await multiEditSourceFile(
+      dir,
+      'm.txt',
+      [{ oldString: 'alpha', newString: 'gamma' }],
+      '',
+      '',
+      store
+    );
+    expect(store.getContent(key)).toBeUndefined();
+  });
+
+  it('does not invalidate the cache when a multi_edit fails', async () => {
+    writeFileSync(join(dir, 'm.txt'), 'a b c');
+    const store = createContextStore();
+    const key = { sourceId: dir, version: '', itemId: 'm.txt' };
+    store.setContent(key, 'still valid');
+    await expect(
+      multiEditSourceFile(dir, 'm.txt', [{ oldString: 'z', newString: 'Z' }], '', '', store)
+    ).rejects.toThrow(/not found/);
+    expect(store.getContent(key)).toBe('still valid');
+  });
+
+  it('insertSourceFile inserts before a unique anchor and invalidates the cache', async () => {
+    writeFileSync(join(dir, 'i.txt'), 'hello world');
+    const store = createContextStore();
+    const key = { sourceId: dir, version: '', itemId: 'i.txt' };
+    store.setContent(key, 'stale');
+    const r = await insertSourceFile(dir, 'i.txt', 'world', 'big ', 'before', '', '', store);
+    expect(r.replacements).toBe(1);
+    expect(readFileSync(join(dir, 'i.txt'), 'utf8')).toBe('hello big world');
+    expect(store.getContent(key)).toBeUndefined();
+  });
+
+  it('invalidates the read cache after a delete_block (isolated store)', async () => {
+    writeFileSync(join(dir, 'd.txt'), 'keep DROP keep');
+    const store = createContextStore();
+    const key = { sourceId: dir, version: '', itemId: 'd.txt' };
+    store.setContent(key, 'stale');
+    await deleteBlockSourceFile(dir, 'd.txt', ' DROP', '', '', store);
+    expect(store.getContent(key)).toBeUndefined();
+  });
+
+  it('insertSourceFile propagates applyInsert throws (anchor not found)', async () => {
+    writeFileSync(join(dir, 'i.txt'), 'hello world');
+    await expect(insertSourceFile(dir, 'i.txt', 'zzz', 'x', 'before', '', '')).rejects.toThrow(
+      /anchor not found/
+    );
+  });
+
+  it('deleteBlockSourceFile propagates applyDeleteBlock throws (non-unique block)', async () => {
+    writeFileSync(join(dir, 'd.txt'), 'x and x');
+    await expect(deleteBlockSourceFile(dir, 'd.txt', 'x', '', '')).rejects.toThrow(
       /matches 2 times/
     );
   });

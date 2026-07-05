@@ -3,7 +3,13 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { grepSource, warmSource, wrapWithCache } from '@verevoir/context';
 import { findSymbols } from '@verevoir/context/code';
 import { pickSourceAdapter, resolveSourceEnv } from '../router.js';
-import { writeSourceFile, editSourceFile } from '../mutate.js';
+import {
+  writeSourceFile,
+  editSourceFile,
+  multiEditSourceFile,
+  insertSourceFile,
+  deleteBlockSourceFile,
+} from '../mutate.js';
 import { queryCodeGraph } from '../graph.js';
 import { jsonText } from '../result.js';
 import { fileURLToPath } from 'node:url';
@@ -280,6 +286,161 @@ export function registerSourceTools(server: McpServer): void {
         oldString,
         newString,
         replaceAll ?? false,
+        commit.branch,
+        commit.commitMessage
+      );
+      return {
+        content: [
+          { type: 'text', text: jsonText({ ok: true, replacements: result.replacements }) },
+        ],
+      };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // multi_edit
+  // -------------------------------------------------------------------------
+  server.registerTool(
+    'multi_edit',
+    {
+      description:
+        'Apply a LIST of exact-string edits to one file ATOMICALLY: all land or none do (if any oldString is absent or non-unique, the whole call throws and nothing is written). Prefer this over several edit_file calls when a file needs multiple changes — one read/write, no half-applied state. Each edit is an { oldString, newString, replaceAll? } (oldString unique unless replaceAll). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements } — the total across all edits.',
+      inputSchema: {
+        sourceUrl: z
+          .string()
+          .describe(
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+          ),
+        path: z.string().describe('File path within the source.'),
+        edits: z
+          .array(
+            z.object({
+              oldString: z
+                .string()
+                .describe('Exact text to replace. Unique unless replaceAll is true.'),
+              newString: z.string().describe('Replacement text.'),
+              replaceAll: z
+                .boolean()
+                .optional()
+                .describe('Replace every occurrence of this edit (default false).'),
+            })
+          )
+          .min(1, 'multi_edit requires at least one edit')
+          .describe('The edits to apply in order, atomically.'),
+        branch: z
+          .string()
+          .optional()
+          .describe(
+            'Branch to commit to. Required for GitHub sources; omit for filesystem + Notion (ignored).'
+          ),
+        commitMessage: z
+          .string()
+          .optional()
+          .describe(
+            'Commit message. Required for GitHub sources; omit for filesystem + Notion (ignored).'
+          ),
+      },
+    },
+    async ({ sourceUrl, path, edits, branch, commitMessage }) => {
+      const commit = commitArgs(sourceUrl, branch, commitMessage);
+      const result = await multiEditSourceFile(
+        sourceUrl,
+        path,
+        edits,
+        commit.branch,
+        commit.commitMessage
+      );
+      return {
+        content: [
+          { type: 'text', text: jsonText({ ok: true, replacements: result.replacements }) },
+        ],
+      };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // insert
+  // -------------------------------------------------------------------------
+  server.registerTool(
+    'insert',
+    {
+      description:
+        'Insert `text` immediately before or after the UNIQUE occurrence of `anchor` in a file — an anchored insert with no surrounding rewrite. Throws if `anchor` or `text` is empty, or `anchor` is absent or matches more than once (add context to make it unique). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements }.',
+      inputSchema: {
+        sourceUrl: z
+          .string()
+          .describe(
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+          ),
+        path: z.string().describe('File path within the source.'),
+        anchor: z.string().describe('Unique text to anchor the insert to.'),
+        text: z.string().describe('Text to insert.'),
+        position: z.enum(['before', 'after']).describe('Insert before or after the anchor.'),
+        branch: z
+          .string()
+          .optional()
+          .describe(
+            'Branch to commit to. Required for GitHub sources; omit for filesystem + Notion.'
+          ),
+        commitMessage: z
+          .string()
+          .optional()
+          .describe('Commit message. Required for GitHub sources; omit for filesystem + Notion.'),
+      },
+    },
+    async ({ sourceUrl, path, anchor, text, position, branch, commitMessage }) => {
+      const commit = commitArgs(sourceUrl, branch, commitMessage);
+      const result = await insertSourceFile(
+        sourceUrl,
+        path,
+        anchor,
+        text,
+        position,
+        commit.branch,
+        commit.commitMessage
+      );
+      return {
+        content: [
+          { type: 'text', text: jsonText({ ok: true, replacements: result.replacements }) },
+        ],
+      };
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // delete_block
+  // -------------------------------------------------------------------------
+  server.registerTool(
+    'delete_block',
+    {
+      description:
+        'Remove the UNIQUE occurrence of `block` from a file. Throws if `block` is empty, absent, or matches more than once (add surrounding context to make it unique). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements }.',
+      inputSchema: {
+        sourceUrl: z
+          .string()
+          .describe(
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+          ),
+        path: z.string().describe('File path within the source.'),
+        block: z.string().describe('The exact block to remove (must be unique in the file).'),
+        branch: z
+          .string()
+          .optional()
+          .describe(
+            'Branch to commit to. Required for GitHub sources; omit for filesystem + Notion.'
+          ),
+        commitMessage: z
+          .string()
+          .optional()
+          .describe('Commit message. Required for GitHub sources; omit for filesystem + Notion.'),
+      },
+    },
+    async ({ sourceUrl, path, block, branch, commitMessage }) => {
+      const commit = commitArgs(sourceUrl, branch, commitMessage);
+      const result = await deleteBlockSourceFile(
+        sourceUrl,
+        path,
+        block,
         commit.branch,
         commit.commitMessage
       );

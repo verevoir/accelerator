@@ -13,7 +13,8 @@ capabilities → accelerator, never the reverse.
   (file mutation), `graph.ts` (code graph), `tiers.ts` / `registry.ts` / `metering.ts` (the
   LLM binding), `audit.ts` / `otlp.ts` (telemetry), `loop/*` (raw refine/search/eval primitives).
 - `src/tools/` — MCP tool registrations: `source.ts` (read/list/tree/grep/find_symbol/
-  code_graph/write/edit/fork/branch/PR), `workflow.ts` (board CRUD).
+  code_graph/write/edit/multi_edit/insert/delete_block/fork/branch/PR), `workflow.ts`
+  (board CRUD).
 - `src/index.ts` — `createServer()`; `src/bin.ts` — the stdio server bin (aliased
   `accelerator` / `verevoir-accelerator`). The other declared bins are `verevoir-card-sync`
   and `verevoir-audit-trace`.

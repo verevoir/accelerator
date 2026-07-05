@@ -14,7 +14,7 @@ it only ever needs source/board credentials — never a model API key.
 Public, two ways:
 
     npx -y @verevoir/accelerator                      # npm (published)
-    npx -y github:verevoir/accelerator#v0.1.2         # from the repo (builds on install)
+    npx -y github:verevoir/accelerator#v0.1.3         # from the repo (builds on install)
 
 MCP client config: { "command": "npx", "args": ["-y", "@verevoir/accelerator"] }
 
@@ -25,7 +25,8 @@ calls; putting one here is dead config + needless exposure). This asymmetry is t
 split: commodity server gets the code/board keys, the moat gets the model keys.
 
 - GITHUB_TOKEN — GitHub source reads + writes/PRs (read_file, grep, find_symbol,
-  code_graph, write_file, edit_file, ensure_fork, ensure_branch, open_pull_request).
+  code_graph, write_file, edit_file, multi_edit, insert, delete_block, ensure_fork,
+  ensure_branch, open_pull_request).
 - NOTION_API_KEY — Notion source + the Notion work-tracker board.
 - TRELLO_API_KEY / TRELLO_API_TOKEN / TRELLO_REFERER — Trello work-tracker.
 - AIGENCY_AUDIT / AIGENCY_AUDIT_DIR — emit audit spans + where to write them.
@@ -33,11 +34,11 @@ split: commodity server gets the code/board keys, the moat gets the model keys.
 
 Public repos / local paths need no token; tokens gate private sources + writes.
 
-## Tools (19)
+## Tools (22)
 
 Source (cached, tree-sitter indexed): read_file, list_files, get_repo_tree, grep,
-find_symbol, code_graph, write_file, edit_file, ensure_fork, ensure_branch,
-open_pull_request. Work tracker: list_cards, get_card, create_card, update_card,
+find_symbol, code_graph, write_file, edit_file, multi_edit, insert, delete_block,
+ensure_fork, ensure_branch, open_pull_request. Work tracker: list_cards, get_card, create_card, update_card,
 move_card, list_columns, list_comments, add_comment. Prefer these over built-in
 filesystem/shell so the shared cache + index stay correct.
 
