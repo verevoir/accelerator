@@ -23,13 +23,13 @@ a model key).
 { "command": "npx", "args": ["-y", "@verevoir/accelerator"] }
 
 // or straight from the repo (builds on install via `prepare`)
-{ "command": "npx", "args": ["-y", "github:verevoir/accelerator#v0.1.1"] }
+{ "command": "npx", "args": ["-y", "github:verevoir/accelerator#v0.1.2"] }
 ```
 
 The `github:` form is what `@verevoir/capabilities` uses as a dependency, so the
 private moat never needs a registry.
 
-## Secrets / environment — and *why* each
+## Secrets / environment — and _why_ each
 
 `accelerator` only exposes **source** and **work-tracker** tools, so it only ever
 needs **source/board credentials**. It has no model tier, so **no model API keys
@@ -38,13 +38,13 @@ config and a needless secret exposure. That asymmetry is deliberate: the split
 lets you hand the commodity server the keys that read your code and boards, and
 keep the model keys on the moat.
 
-| Env var | Why the server needs it |
-|---|---|
-| `GITHUB_TOKEN` | GitHub source adapter — `read_file`/`grep`/`find_symbol`/`code_graph`, and `write_file`/`edit_file`/`ensure_fork`/`ensure_branch`/`open_pull_request`. |
-| `NOTION_API_KEY` | Notion source (pages as a file tree) **and** the Notion work-tracker board (`list_cards`/`create_card`/…). |
-| `TRELLO_API_KEY`, `TRELLO_API_TOKEN`, `TRELLO_REFERER` | Trello work-tracker backend, when the board is Trello. |
-| `AIGENCY_AUDIT`, `AIGENCY_AUDIT_DIR` | Emit audit spans (the shared telemetry lib lives here) and where to write them. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP export of those spans to a collector. |
+| Env var                                                | Why the server needs it                                                                                                                                |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GITHUB_TOKEN`                                         | GitHub source adapter — `read_file`/`grep`/`find_symbol`/`code_graph`, and `write_file`/`edit_file`/`ensure_fork`/`ensure_branch`/`open_pull_request`. |
+| `NOTION_API_KEY`                                       | Notion source (pages as a file tree) **and** the Notion work-tracker board (`list_cards`/`create_card`/…).                                             |
+| `TRELLO_API_KEY`, `TRELLO_API_TOKEN`, `TRELLO_REFERER` | Trello work-tracker backend, when the board is Trello.                                                                                                 |
+| `AIGENCY_AUDIT`, `AIGENCY_AUDIT_DIR`                   | Emit audit spans (the shared telemetry lib lives here) and where to write them.                                                                        |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                          | OTLP export of those spans to a collector.                                                                                                             |
 
 Local paths and public GitHub repos need no token; the tokens gate private
 sources and writes.

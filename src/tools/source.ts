@@ -3,8 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { grepSource, warmSource, wrapWithCache } from '@verevoir/context';
 import { findSymbols } from '@verevoir/context/code';
 import { pickSourceAdapter, resolveSourceEnv } from '../router.js';
-import { applyEdit } from '../edit.js';
-import { invalidateWrittenFile } from '../cache.js';
+import { writeSourceFile, editSourceFile } from '../mutate.js';
 import { queryCodeGraph } from '../graph.js';
 import { jsonText } from '../result.js';
 import { fileURLToPath } from 'node:url';
@@ -230,11 +229,8 @@ export function registerSourceTools(server: McpServer): void {
       },
     },
     async ({ sourceUrl, path, content, branch, commitMessage }) => {
-      const adapter = await pickSourceAdapter(sourceUrl);
-      const env = resolveSourceEnv(sourceUrl);
       const commit = commitArgs(sourceUrl, branch, commitMessage);
-      await adapter.writeFile(env, sourceUrl, path, content, commit.branch, commit.commitMessage);
-      invalidateWrittenFile(sourceUrl, path, commit.branch);
+      await writeSourceFile(sourceUrl, path, content, commit.branch, commit.commitMessage);
       return { content: [{ type: 'text', text: jsonText({ ok: true }) }] };
     }
   );
@@ -277,20 +273,16 @@ export function registerSourceTools(server: McpServer): void {
       },
     },
     async ({ sourceUrl, path, oldString, newString, branch, commitMessage, replaceAll }) => {
-      const adapter = await pickSourceAdapter(sourceUrl);
-      const env = resolveSourceEnv(sourceUrl);
       const commit = commitArgs(sourceUrl, branch, commitMessage);
-      const { content } = await adapter.readFile(env, sourceUrl, path, commit.branch || undefined);
-      const result = applyEdit(content, oldString, newString, replaceAll ?? false);
-      await adapter.writeFile(
-        env,
+      const result = await editSourceFile(
         sourceUrl,
         path,
-        result.content,
+        oldString,
+        newString,
+        replaceAll ?? false,
         commit.branch,
         commit.commitMessage
       );
-      invalidateWrittenFile(sourceUrl, path, commit.branch);
       return {
         content: [
           { type: 'text', text: jsonText({ ok: true, replacements: result.replacements }) },
