@@ -32,14 +32,14 @@ export async function writeSourceFile(
 }
 
 /**
- * Commit multiple files together on `branch` in one atomic operation, per the
- * adapter's `commitFiles` contract (GitHub-atomic; fs best-effort — writes then
- * stages/commits; Notion degrades to sequential writes), then invalidate the
- * read cache for each written file (dual-scope, via `invalidateWrittenFile`).
- * The multi-file twin of `writeSourceFile` — `files` is the already-built set,
- * so it skips the read→apply→write mutate cycle the string-edit ops use.
- * `branch`/`commitMessage` are the resolved `commitArgs`. `store` is injectable
- * for tests.
+ * The multi-file twin of `writeSourceFile`: commit `files` together via the
+ * adapter's `commitFiles`, then invalidate the read cache for each written file
+ * (dual-scope, via `invalidateWrittenFile`). `files` is the already-built set,
+ * so it skips the read→apply→write cycle the string-edit ops use. The
+ * invalidation runs only after a successful commit — so a failed (possibly
+ * partial) commit leaves the cache untouched, as the sibling ops do.
+ * Per-backend atomicity is the adapter's contract (see the `commit_files` tool
+ * description). `store` is injectable for tests.
  */
 export async function commitFilesSource(
   sourceUrl: string,
