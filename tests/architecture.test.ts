@@ -34,6 +34,18 @@ describe('globToRegExp', () => {
     expect(globToRegExp('**/infra').test('src/other')).toBe(false);
   });
 
+  it('** is anchored at a segment boundary — it does not match a partial segment', () => {
+    expect(globToRegExp('**/infra').test('notinfra')).toBe(false);
+    expect(globToRegExp('**/infra').test('xinfra')).toBe(false);
+    expect(globToRegExp('**/infra').test('x/infra')).toBe(true);
+  });
+
+  it('a single star spans one segment, a double star spans subpaths (node:* vs node:**)', () => {
+    expect(globToRegExp('node:*').test('node:fs')).toBe(true);
+    expect(globToRegExp('node:*').test('node:fs/promises')).toBe(false); // * stops at the slash
+    expect(globToRegExp('node:**').test('node:fs/promises')).toBe(true); // ** crosses it
+  });
+
   it('escapes regex metacharacters so a dotted specifier matches literally', () => {
     expect(globToRegExp('app.infra.db').test('app.infra.db')).toBe(true);
     expect(globToRegExp('app.infra.db').test('appXinfraXdb')).toBe(false);

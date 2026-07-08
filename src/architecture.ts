@@ -1,4 +1,3 @@
-import { contextStore } from '@verevoir/context';
 import { edgesForItem } from '@verevoir/context/code';
 import type { ContextStore } from '@verevoir/context';
 
@@ -27,9 +26,11 @@ export interface ArchViolation {
   rule: ArchRule;
 }
 
-/** Compile a `*` / `**` glob to an anchored RegExp. A double-star matches across `/`
- * (and swallows a following slash, so a leading double-star also matches at the root); a
- * single star matches within a segment; every other regex metacharacter is escaped. */
+/** Compile a `*` / `**` glob to an anchored RegExp. A `**` followed by `/` matches any
+ * number of leading path segments (including none) anchored at a segment boundary — so a
+ * double-star-slash `infra` pattern matches `infra` and `x/infra`, but NOT `notinfra`; a
+ * bare `**` matches anything across segments; a single `*` matches within one segment;
+ * other regex metacharacters are escaped. */
 const REGEX_META = new Set(['.', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\']);
 
 export function globToRegExp(glob: string): RegExp {
@@ -38,11 +39,15 @@ export function globToRegExp(glob: string): RegExp {
     const c = glob[i];
     if (c === '*') {
       if (glob[i + 1] === '*') {
-        re += '.*';
-        i++;
-        if (glob[i + 1] === '/') i++; // `**/x` also matches `x` at the root
+        i++; // consume the second star
+        if (glob[i + 1] === '/') {
+          i++; // `**` + `/` becomes an optional "leading segments then a slash", boundary-anchored
+          re += '(?:.*/)?';
+        } else {
+          re += '.*'; // bare `**` — anything, across segments
+        }
       } else {
-        re += '[^/]*';
+        re += '[^/]*'; // single `*` — within one segment
       }
     } else if (REGEX_META.has(c)) {
       re += `\\${c}`;
@@ -80,13 +85,4 @@ export function checkArchitecture(
     }
   }
   return violations;
-}
-
-/** Convenience wrapper over the singleton store — for the MCP tool / a capability verify. */
-export function queryArchitecture(
-  sourceUrl: string,
-  version: string,
-  rules: ArchRule[]
-): ArchViolation[] {
-  return checkArchitecture(contextStore, sourceUrl, version, rules);
 }
