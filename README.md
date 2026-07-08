@@ -66,7 +66,7 @@ symbol index stay correct across a session.
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
 `/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/graph`,
-`/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`, `/loop/search`,
+`/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`, `/loop/search`,
 `/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
 dependency direction is **capabilities → accelerator** (never the reverse), which
 keeps governance out of the commodity layer.
