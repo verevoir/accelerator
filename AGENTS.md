@@ -10,7 +10,8 @@ capabilities → accelerator, never the reverse.
 
 - TypeScript, ESM, Node ≥ 20. Built with `tsc`; tested with `vitest`.
 - `src/` — the substrate: `router.ts` (backend routing), `cache.ts`, `edit.ts` + `mutate.ts`
-  (file mutation), `graph.ts` (code graph), `tiers.ts` / `registry.ts` / `metering.ts` (the
+  (file mutation), `graph.ts` (code graph) + `architecture.ts` (deterministic
+  architecture-conformance checks over the graph), `tiers.ts` / `registry.ts` / `metering.ts` (the
   LLM binding), `audit.ts` / `otlp.ts` (telemetry), `loop/*` (raw refine/search/eval primitives).
 - `src/tools/` — MCP tool registrations: `source.ts` (read/list/tree/grep/find_symbol/
   code_graph/write/edit/multi_edit/insert/delete_block/commit_files/fork/branch/PR), `workflow.ts`

@@ -1,11 +1,6 @@
 import { edgesForItem } from '@verevoir/context/code';
 import type { ContextStore } from '@verevoir/context';
 
-// Deterministic architectural-conformance over the code graph's import edges: forbid a
-// set of files (path glob) from importing a set of modules (specifier glob) — the
-// `architecture-boundaries` practice made mechanical. Specifier-based; relative-path
-// resolution is a later pass. Rationale + roadmap: STDIO-563.
-
 export interface ArchRule {
   /** Glob over file paths this rule applies to, e.g. `src/domain/**`. */
   from: string;
