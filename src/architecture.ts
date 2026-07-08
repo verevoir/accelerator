@@ -1,13 +1,10 @@
 import { edgesForItem } from '@verevoir/context/code';
 import type { ContextStore } from '@verevoir/context';
 
-// ARCHITECTURE — deterministic architectural-conformance checks over the code graph's
-// import edges. A rule forbids a set of files (by path glob) from importing a set of
-// modules (by import-specifier glob): layering ("domain must not import infra"), a banned
-// dependency, "no node builtins in the UI layer". This is the `architecture-boundaries`
-// practice made MECHANICAL — a project's OWN structural rules, which off-the-shelf
-// scanners (Snyk / SAST) don't know. It is specifier-based: it reads the import as
-// written; resolving a relative specifier to the file it points at is a later pass.
+// Deterministic architectural-conformance over the code graph's import edges: forbid a
+// set of files (path glob) from importing a set of modules (specifier glob) — the
+// `architecture-boundaries` practice made mechanical. Specifier-based; relative-path
+// resolution is a later pass. Rationale + roadmap: STDIO-563.
 
 export interface ArchRule {
   /** Glob over file paths this rule applies to, e.g. `src/domain/**`. */
@@ -26,28 +23,29 @@ export interface ArchViolation {
   rule: ArchRule;
 }
 
+const REGEX_META = new Set(['.', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\']);
+
 /** Compile a `*` / `**` glob to an anchored RegExp. A `**` followed by `/` matches any
  * number of leading path segments (including none) anchored at a segment boundary — so a
  * double-star-slash `infra` pattern matches `infra` and `x/infra`, but NOT `notinfra`; a
  * bare `**` matches anything across segments; a single `*` matches within one segment;
  * other regex metacharacters are escaped. */
-const REGEX_META = new Set(['.', '+', '?', '^', '$', '{', '}', '(', ')', '|', '[', ']', '\\']);
-
 export function globToRegExp(glob: string): RegExp {
   let re = '';
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
     if (c === '*') {
       if (glob[i + 1] === '*') {
-        i++; // consume the second star
+        i++;
         if (glob[i + 1] === '/') {
-          i++; // `**` + `/` becomes an optional "leading segments then a slash", boundary-anchored
+          // a boundary-anchored `**/`: optional leading segments, never a mid-segment match
+          i++;
           re += '(?:.*/)?';
         } else {
-          re += '.*'; // bare `**` — anything, across segments
+          re += '.*';
         }
       } else {
-        re += '[^/]*'; // single `*` — within one segment
+        re += '[^/]*';
       }
     } else if (REGEX_META.has(c)) {
       re += `\\${c}`;

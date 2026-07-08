@@ -105,7 +105,7 @@ describe('checkArchitecture — forbidden dependency edges', () => {
       'app/infra/db.py': 'conn = 1\n',
     });
     const v = check(store, [{ from: 'app/domain/**', forbid: '**infra**' }]);
-    expect(v.length).toBeGreaterThan(0);
-    expect(v[0].module).toContain('infra');
+    expect(v).toHaveLength(1);
+    expect(v[0]).toMatchObject({ file: 'app/domain/user.py', module: 'app.infra.db' });
   });
 });
