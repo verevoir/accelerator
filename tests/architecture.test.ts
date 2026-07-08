@@ -56,7 +56,8 @@ describe('checkArchitecture — forbidden dependency edges', () => {
 
   it('does not flag an allowed import within the same layer', () => {
     const store = seed({
-      'src/domain/user.ts': "import { Id } from '../domain/id';\nexport function u() { return Id; }",
+      'src/domain/user.ts':
+        "import { Id } from '../domain/id';\nexport function u() { return Id; }",
       'src/domain/id.ts': 'export const Id = 1;',
     });
     expect(check(store, [{ from: 'src/domain/**', forbid: '**/infra/**' }])).toHaveLength(0);
@@ -70,7 +71,9 @@ describe('checkArchitecture — forbidden dependency edges', () => {
   });
 
   it('flags a node builtin imported into a forbidden layer', () => {
-    const store = seed({ 'src/ui/button.ts': "import { readFile } from 'node:fs';\nexport const b = readFile;" });
+    const store = seed({
+      'src/ui/button.ts': "import { readFile } from 'node:fs';\nexport const b = readFile;",
+    });
     expect(check(store, [{ from: 'src/ui/**', forbid: 'node:*' }])).toHaveLength(1);
   });
 

@@ -83,6 +83,10 @@ export function checkArchitecture(
 }
 
 /** Convenience wrapper over the singleton store — for the MCP tool / a capability verify. */
-export function queryArchitecture(sourceUrl: string, version: string, rules: ArchRule[]): ArchViolation[] {
+export function queryArchitecture(
+  sourceUrl: string,
+  version: string,
+  rules: ArchRule[]
+): ArchViolation[] {
   return checkArchitecture(contextStore, sourceUrl, version, rules);
 }
