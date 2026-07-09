@@ -45,7 +45,7 @@ filesystem/shell so the shared cache + index stay correct.
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
-/router, /audit, /metering, /result, /edit, /cache, /mutate, /graph, /manifest,
+/router, /audit, /metering, /result, /edit, /cache, /mutate, /graph, /architecture, /manifest,
 /instructions, /loop/evals, /loop/refine, /loop/search, /tools/source,
 /tools/workflow. @verevoir/capabilities imports these.
 
