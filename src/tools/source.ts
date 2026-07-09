@@ -55,6 +55,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'read_file',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         "Read a file's full contents from any source — a local repo (absolute path), a GitHub repo, or Notion. Prefer this over the built-in file Read for project/repo files: reads are cached per (sourceUrl, ref, path) and the cache is shared with grep/find_symbol, so reading also warms the index for later search. Returns { content, sha }.",
       inputSchema: {
@@ -81,6 +82,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'list_files',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         'List directory entries at a path prefix within a source (local path, GitHub repo, or Notion page tree). Use it to orient before reading; prefer over shell ls/find for project files. Returns DirEntry[] (name, type, path, sha).',
       inputSchema: {
@@ -107,6 +109,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'get_repo_tree',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         'Fetch the full file tree for a source (local path, GitHub repo, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag.',
       inputSchema: {
@@ -132,6 +135,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'grep',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         'Search file contents for a pattern across an entire source on demand. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context.',
       inputSchema: {
@@ -169,6 +173,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'find_symbol',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         'Find where a named function, class, method, interface, type, or enum is defined — scans the whole source on demand, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range.',
       inputSchema: {
@@ -211,6 +216,11 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'write_file',
     {
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: true,
+      },
       description:
         "Write a file's full contents to a source. Always prefer this (and edit_file) over the built-in Write or shell redirection for a covered path: it commits the change AND drops the file from the shared read cache so the next grep/find_symbol re-fetches — a write that bypasses the MCP leaves that cache stale and wrong for the rest of the session. GitHub sources commit to the given branch via the contents API (branch + commitMessage required there); filesystem + Notion sources write directly with no git staging, so omit branch + commitMessage. Returns { ok: true }.",
       inputSchema: {
@@ -248,6 +258,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'edit_file',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         'Surgically edit a file in any source: replace an exact `oldString` with `newString`. Prefer this over the built-in Edit for a covered path — like write_file it invalidates the shared read cache after writing (a bypassing edit leaves grep/find_symbol serving stale, pre-edit content), and it keeps the whole read->edit->write cycle in-toolchain across local, GitHub, and Notion sources. `oldString` must match exactly once unless `replaceAll` is set — include enough surrounding context to make it unique. GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly, so omit branch + commitMessage. Returns { ok: true, replacements }.',
       inputSchema: {
@@ -304,6 +315,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'multi_edit',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         'Apply a LIST of exact-string edits to one file ATOMICALLY: all land or none do (if any oldString is absent or non-unique, the whole call throws and nothing is written). Prefer this over several edit_file calls when a file needs multiple changes — one read/write, no half-applied state. Each edit is an { oldString, newString, replaceAll? } (oldString unique unless replaceAll). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements } — the total across all edits.',
       inputSchema: {
@@ -365,6 +377,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'insert',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         'Insert `text` immediately before or after the UNIQUE occurrence of `anchor` in a file — an anchored insert with no surrounding rewrite. Throws if `anchor` or `text` is empty, or `anchor` is absent or matches more than once (add context to make it unique). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements }.',
       inputSchema: {
@@ -414,6 +427,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'delete_block',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         'Remove the UNIQUE occurrence of `block` from a file. Throws if `block` is empty, absent, or matches more than once (add surrounding context to make it unique). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements }.',
       inputSchema: {
@@ -459,6 +473,11 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'commit_files',
     {
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: true,
+      },
       description:
         'Commit MULTIPLE files together on `branch` in ONE operation — the multi-file twin of write_file. Prefer this over several write_file calls when a change spans files: on GitHub it is a single ATOMIC commit (blobs → tree → commit → ref move; the ref advances only after every step succeeds, so a failure leaves no partial state) instead of N separate commits; on a local git repo it writes the files then stages + commits them (best-effort — a git failure throws but the already-written files are NOT rolled back, so inspect the working tree on error); on Notion it degrades to sequential writes. Like the other writers it drops each written file from the shared read cache. `files` must be non-empty. GitHub requires `branch` + `commitMessage`; a local git repo uses `branch` to create/advance; a non-git path or Notion writes directly. Returns { ok: true, files } — the count committed.',
       inputSchema: {
@@ -511,6 +530,12 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'ensure_fork',
     {
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       description:
         "Fork a GitHub repo into the configured fork org and return the **working URL** — the fork that becomes your workspace for this repo. Idempotent: returns the existing fork if one is already there. The repo's source URL stays its identity and the eventual pull-request target; everything you actually do — read, write, branch, commit — happens on the working URL, so a repo you do NOT own is never written directly. GitHub only. Returns { workingUrl }.",
       inputSchema: {
@@ -530,6 +555,12 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'ensure_branch',
     {
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       description:
         'Ensure a branch exists on a GitHub repo — created off the default branch if missing, a no-op if it already exists. Pass the **working URL** (the fork from ensure_fork) — that is what you branch and commit on. GitHub only. Returns { ok: true, branch }.',
       inputSchema: {
@@ -550,6 +581,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'open_pull_request',
     {
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description:
         "Open a pull request on a GitHub repo and return its URL. Addressed by the repo's **source URL** (the PR target); the change lives on a `branch` on the **working URL** (the fork). The cross-repo head (`<fork-owner>:<branch>`) is built for you from the working URL, so you never hand-build it. For a same-repo change (you own the repo), pass the same URL for both source and working. GitHub only. Returns { prUrl }.",
       inputSchema: {
@@ -582,6 +614,7 @@ export function registerSourceTools(server: McpServer): void {
   server.registerTool(
     'code_graph',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved to symbols defined in this source), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions.",
       inputSchema: {

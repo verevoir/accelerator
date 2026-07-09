@@ -22,6 +22,7 @@ export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
     'list_columns',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         'List the columns (workflow states) of a kanban board or Notion work-tracker database. Returns Column[] ordered by position.',
       inputSchema: {
@@ -46,6 +47,7 @@ export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
     'list_cards',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         "List cards/rows on a kanban board or Notion work-tracker database, with optional filters by column, assignee, label, or parent card. This is how you read the project's work tracker — prefer it over hunting for a task list in local files. By default card **bodies are omitted** (keeps the payload small — large boards can otherwise overflow); pass includeBody:true for bodies, or read one card's body with get_card. Returns Card[].",
       inputSchema: {
@@ -92,6 +94,7 @@ export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
     'get_card',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description: 'Fetch a single card by ID. Throws 404 if the card does not exist.',
       inputSchema: {
         boardUrl: z
@@ -116,6 +119,7 @@ export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
     'create_card',
     {
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description: 'Create a new card in a column. Returns the created Card.',
       inputSchema: {
         boardUrl: z
@@ -149,6 +153,7 @@ export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
     'update_card',
     {
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         'Apply a partial update to a card. Only supplied fields are changed; omitted fields are left as-is.',
       inputSchema: {
@@ -203,6 +208,12 @@ export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
     'move_card',
     {
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       description:
         'Move a card to a different column. Shorthand for update_card with only columnId.',
       inputSchema: {
@@ -231,6 +242,7 @@ export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
     'list_comments',
     {
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         'List comments on a card, most-recent-first. Returns Comment[] with body, authorName, and date.',
       inputSchema: {
@@ -256,6 +268,7 @@ export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
     'add_comment',
     {
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description: 'Add a comment to a card.',
       inputSchema: {
         boardUrl: z
