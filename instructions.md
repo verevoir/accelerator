@@ -36,7 +36,7 @@ Reads are cached and tree-sitter symbol-indexed via `@verevoir/context` and shar
 
 ## File workflow
 
-`get_repo_tree` or `list_files` to orient → `read_file` to pull a specific file (this warms the cache) → `grep` / `find_symbol` to search. `grep` and `find_symbol` scan the whole source on demand and warm the cache as they go, so they need no prior `read_file` — reach for them directly when you're searching rather than opening one file you already know.
+`get_repo_tree` or `list_files` to orient → `read_file` to pull a specific file (this warms the cache) → `grep` / `find_symbol` to search. `grep` and `find_symbol` search the source on demand, so they need no prior `read_file` — reach for them directly when you're searching rather than opening one file you already know. `grep` is **lazy**: it reads the source in deterministic order and stops early once `maxResults` matches are settled, warming into the cache only the files it actually reads (a small query no longer touches every file). Pass `prefix` to scope a search to one subtree — a real saving on a large source. `find_symbol` still scans the whole source; the hits are identical to a whole-source warm followed by search, so early termination changes only how much is read, never the result.
 
 ## Project state lives in the tools, not the local git tree
 

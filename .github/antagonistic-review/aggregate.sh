@@ -2,9 +2,9 @@
 # Union every panel lens's verdict and gate on unanimous approval — the merge gate's
 # decision. Fails CLOSED: exits non-zero if any lens rejected, produced a non-APPROVE or
 # malformed verdict, is missing, or if a verdict ran for a lens OUTSIDE the gated set
-# (matrix/aggregator drift). The lens set is FIXED — PANEL_LENSES overrides it for tests,
-# else the default is used when it is UNSET. Extracted from the workflow so the gate's
-# decision logic is unit-testable.
+# (matrix/aggregator drift). PANEL_LENSES overrides the lens set when set (tests use
+# this); in production it is unset, so the hardcoded default applies. Extracted from the
+# workflow so the gate's decision logic is unit-testable.
 set -euo pipefail
 
 dir="${1:?usage: aggregate.sh <verdicts-dir>}"
@@ -23,9 +23,17 @@ case "$lenses" in
     ;;
 esac
 
-# Neutralise a line-starting `::` in anything echoed from a verdict (which a
-# prompt-injected panelist controls), so it cannot emit a GitHub Actions workflow command.
-safe() { sed 's/^::/ ::/'; }
+# Neutralise GHA workflow-command injection in anything echoed from a verdict (which
+# a prompt-injected panelist controls): strip CR (a literal \r acts as a line
+# terminator to the runner, letting '::cmd' open a line sed's ^ never sees), %-encode
+# (kills %0D/%0A escape smuggling), then indent any line-start '::'.
+safe() { tr -d '\r' | sed -e 's/%/%25/g' -e 's/^::/ ::/'; }
+
+# Bound every jq parse of untrusted panelist JSON: a pathological-but-under-1MB payload
+# must fail this one lens closed, not hold the aggregator to the job envelope. The bound
+# is env-overridable so tests can exercise the timeout actually firing.
+# (Guarded — dev machines may lack coreutils timeout; CI runners always have it.)
+if command -v timeout >/dev/null 2>&1; then jq_bounded() { timeout "${JQ_BOUNDED_TIMEOUT:-10}" jq "$@"; }; else jq_bounded() { jq "$@"; }; fi
 
 ok=1
 echo "## Antagonistic panel — verdict by lens"
@@ -37,18 +45,19 @@ for lens in $lenses; do
     continue
   fi
   # A verdict is a small JSON object; anything over 1MB is a model-written path gone wrong
-  # (or an injection attempt). Refuse to parse untrusted bulk rather than risk OOM.
-  if [ "$(wc -c <"$f")" -gt 1000000 ]; then
+  # (or an injection attempt). The read itself is capped at 1MB+1 — size is decided
+  # without ever consuming an unbounded stream.
+  if [ "$(head -c 1000001 "$f" | wc -c)" -gt 1000000 ]; then
     echo "::error title=Oversize verdict::Panelist '$lens' produced a verdict over 1MB — refusing to parse. Failing closed."
     ok=0
     continue
   fi
-  v="$(jq -r '.verdict // empty' "$f" 2>/dev/null || echo '')"
+  v="$(jq_bounded -r '.verdict // empty' "$f" 2>/dev/null || echo '')"
   {
     echo ""
     echo "### ${lens} — ${v:-none}"
-    jq -r '.summary // ""' "$f" 2>/dev/null || true
-    jq -r '.findings[]? | "  - " + .' "$f" 2>/dev/null || true
+    jq_bounded -r '.summary // ""' "$f" 2>/dev/null || true
+    jq_bounded -r '.findings[]? | "  - " + .' "$f" 2>/dev/null || true
   } | safe
   [ "$v" = "APPROVE" ] || ok=0
 done
@@ -62,6 +71,12 @@ for d in "$dir"/verdict-*/; do
   case " $lenses " in
     *" $got "*) : ;;
     *)
+      # $got is a directory name, not verdict JSON, so it bypasses safe(); reduce it to
+      # the lens alphabet before embedding it in a workflow command (a crafted name with
+      # a newline could otherwise emit a line-starting `::` command of its own).
+      # LC_ALL=C pins tr's a-z range to ASCII bytes — POSIX allows locale collation to
+      # widen ranges, and this filter must never widen.
+      got="$(printf '%s' "$got" | LC_ALL=C tr -cd 'a-z0-9-')"
       echo "::error title=Unexpected lens::'$got' produced a verdict but is not in the gated set — matrix/aggregator drift. Failing closed."
       ok=0
       ;;

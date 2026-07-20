@@ -73,16 +73,19 @@ keeps governance out of the commodity layer.
 
 ## Configuring the antagonistic-review gate
 
-This repo carries the gate (`.github/workflows/antagonistic-review.yml` +
-`.github/antagonistic-review/mcp.json`). The reviewer's rubric comes from
+This repo carries the gate: `.github/workflows/antagonistic-review.yml`, the
+decision script `.github/antagonistic-review/aggregate.sh`, the merge-base
+resolver `.github/antagonistic-review/resolve-merge-base.sh`, and
+`.github/antagonistic-review/mcp.json`. The reviewer's rubric comes from
 `provision`, which lives in `@verevoir/capabilities` — so the gate's MCP is
-**capabilities**, git-installed from its private repo. The full setup (the two
+**capabilities**, git-installed from its private repo. The full setup (the
 secrets, the clone step, the reviewer `allowed_tools`) is documented in the
 **[capabilities README → "Antagonistic-review gate"](https://github.com/verevoir/capabilities#antagonistic-review-gate)**,
-since capabilities is the reviewer engine. In short, this repo needs two org
-secrets: `CUTOVER_PUSH_TOKEN` (Contents:read — clones the private capabilities
-MCP and reads the corpus) and `CLAUDE_CODE_OAUTH_TOKEN` (the reviewer's model
-credential).
+since capabilities is the reviewer engine. In short, the gate mints a per-run,
+least-privilege token from a **GitHub App** (org secrets `VEREVOIR_APP_ID` +
+`VEREVOIR_APP_PRIVATE_KEY`, scoped to just the repos it reads — no standing
+PAT), plus a reviewer model credential (`CLAUDE_CODE_OAUTH_TOKEN`, or
+`ANTHROPIC_API_KEY`).
 
 ## Bins
 

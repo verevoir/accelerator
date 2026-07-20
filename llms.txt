@@ -42,6 +42,11 @@ commit_files, ensure_fork, ensure_branch, open_pull_request. Work tracker: list_
 move_card, list_columns, list_comments, add_comment. Prefer these over built-in
 filesystem/shell so the shared cache + index stay correct.
 
+grep is lazy (via @verevoir/context 0.14): it reads the source in deterministic
+order and stops once maxResults matches are settled, warming only the files it
+reads — a small query no longer touches every file; the hits are identical to a
+whole-source warm + search. An optional prefix scopes grep/warm to one subtree.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
@@ -53,9 +58,11 @@ Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
 
 This repo runs the gate; the reviewer's provision comes from the private
 @verevoir/capabilities (git-installed per .github/antagonistic-review/mcp.json).
-Two org secrets: CUTOVER_PUSH_TOKEN (Contents:read — clones the private
-capabilities MCP + reads the corpus) and CLAUDE_CODE_OAUTH_TOKEN (reviewer model
-credential). Full gate config is in the capabilities docs (it is the reviewer
+Credentials: a GitHub App (org secrets VEREVOIR_APP_ID + VEREVOIR_APP_PRIVATE_KEY)
+mints a per-run, least-privilege token scoped to just the repos the gate reads —
+no standing PAT — plus a reviewer model credential (CLAUDE_CODE_OAUTH_TOKEN, or
+ANTHROPIC_API_KEY). Gate scripts: aggregate.sh (decision) + resolve-merge-base.sh
+(diff range). Full gate config is in the capabilities docs (it is the reviewer
 engine).
 
 ## Bins
