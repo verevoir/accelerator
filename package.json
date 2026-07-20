@@ -45,7 +45,7 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@notionhq/client": "^5.22.0",
     "@verevoir/context": "^0.14.0",
-    "@verevoir/llm": "^0.17.0",
+    "@verevoir/llm": "^0.20.0",
     "@verevoir/sources": "^0.7.0",
     "@verevoir/workflows": "^0.6.0",
     "openai": "^6.43.0",
