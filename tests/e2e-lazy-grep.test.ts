@@ -99,10 +99,13 @@ describe('e2e: lazy grep reads fewer files than a whole-tree warm', () => {
     await warmSource(warm.adapter, ENV, dir, { store: createContextStore() });
     expect(warm.reads.length).toBe(TOTAL_FILES);
 
-    // The win: the bounded grep read strictly fewer — it settled on the matched
-    // prefix (plus a bounded read-ahead window) and never scanned the filler.
-    // (The exact lazy count jitters with async read-ahead scheduling; the robust,
-    // non-flaky claim is that it beat the whole-tree baseline.)
+    // The win: the bounded grep read strictly fewer — once the 3 matched files
+    // (sorted first) settle the result, grepSource stops scheduling reads, so it
+    // reads the matched prefix plus a bounded read-ahead window (~a dozen), never
+    // the 60. The read-ahead adds a few files' jitter at the low end, but the
+    // assertion has ~46 files of headroom below the whole-tree baseline — it is
+    // not a tight boundary that scheduler pressure could flip.
     expect(lazy.reads.length).toBeLessThan(warm.reads.length);
+    expect(lazy.reads.length).toBeLessThan(TOTAL_FILES / 2); // structural headroom, not a tight edge
   });
 });

@@ -4,8 +4,9 @@
 // find_symbol, get_repo_tree, list_files) — exercised end to end against a real
 // filesystem fixture (no mocks), each through the exact handler
 // `registerSourceTools` registers on the server, the same path the running MCP
-// takes. A green here means that surface actually works. (The write/mutate tools
-// this same registration wires up are covered in e2e-cache-coherence.test.ts.)
+// takes. A green here means that surface actually works. (write_file and edit_file
+// are exercised in e2e-cache-coherence.test.ts; the remaining mutate tools are
+// covered by the unit suites — mutate/edit-tools/fork-flow.)
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';

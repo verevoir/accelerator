@@ -36,9 +36,9 @@ describe('e2e: cache coherence across the MCP write/read boundary', () => {
   beforeEach(() => {
     // A fresh temp dir per test isolates the process-level context cache without
     // resetting it: the cache is keyed by sourceId (= this unique dir), so no
-    // entry from a prior test can be served here. This is the repo's convention
-    // (see edit-tools.test.ts) — and it is exactly the shared cache the write/read
-    // coherence below must exercise, not reset, to be a real test.
+    // entry from a prior test can be served here. This is exactly the shared cache
+    // the write/read coherence below must exercise, not reset, to be a real test —
+    // resetting it would defeat the invalidation-on-write assertion.
     dir = mkdtempSync(join(tmpdir(), 'e2e-cache-'));
     tools = realHandlers();
   });
