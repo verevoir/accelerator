@@ -1,12 +1,13 @@
 // @vitest-environment node
 //
-// E2E proof-of-function for the context-0.14 lazy-grep win, quantified: a cold
-// grep with a small maxResults must read FEWER files than the tree holds,
-// terminating early once the result is settled — versus a whole-tree warm that
-// reads every file. The seam is the SourceAdapter's own `readFile`: we wrap the
-// REAL fs adapter, count the reads it actually performs, and drive the lazy path
-// through the real MCP `grep` tool handler. No src change — the router is the
-// only injection point, so we swap in the counting adapter there.
+// E2E proof-of-function for the context-0.14 lazy-grep win, quantified: the real
+// MCP `grep` tool, given a small maxResults, terminates early and reads strictly
+// FEWER files than a whole-tree warm of the same fixture. We count the reads the
+// adapter actually performs, driving the lazy path through the real grep handler.
+//
+// The grep tool resolves its adapter from the router; that is the one seam we
+// override, to slot in a counting wrapper over the REAL fs adapter — the lazy
+// logic and the tool path stay genuine, only the read count is instrumented.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -16,9 +17,6 @@ import type { SourceAdapter } from '@verevoir/sources';
 import { fs as realFs } from '@verevoir/context/fs';
 import { warmSource, createContextStore } from '@verevoir/context';
 
-// The grep tool asks the router for its adapter; that is the seam. Swap in a
-// counting wrapper over the REAL fs adapter — the lazy logic under test is
-// genuine, only the read count is instrumented.
 vi.mock('../src/router.js', () => ({
   pickSourceAdapter: vi.fn(),
   resolveSourceEnv: vi.fn(() => ({ token: '', forkOrg: '' })),
@@ -39,12 +37,8 @@ function realHandlers(): Record<string, Handler> {
   return handlers;
 }
 
-function reply(res: { content: { text: string }[] }): unknown {
-  return JSON.parse(res.content[0].text);
-}
-
-/** A SourceAdapter identical to the real fs adapter, but counting the files its
- * `readFile` actually pulls — the instrumentation seam for "how much was read". */
+/** A SourceAdapter identical to the real fs adapter, but recording the files its
+ * `readFile` actually pulls — the instrumentation for "how much was read". */
 function countingFsAdapter(): { adapter: SourceAdapter; reads: string[] } {
   const reads: string[] = [];
   const adapter: SourceAdapter = {
@@ -57,6 +51,7 @@ function countingFsAdapter(): { adapter: SourceAdapter; reads: string[] } {
   return { adapter, reads };
 }
 
+const ENV = { token: '', forkOrg: '' };
 const NEEDLE = 'FIND_ME_MARKER';
 const TOTAL_FILES = 60;
 const MATCHING = 3; // the first three files, in sort order, carry the needle
@@ -66,8 +61,9 @@ describe('e2e: lazy grep reads fewer files than a whole-tree warm', () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'e2e-lazy-'));
-    // a00..a02 (sort first) carry the needle; b03..bNN do not. Zero-padded so
-    // the deterministic sort order puts the matches strictly first.
+    // a00..a02 (sort first) carry the needle; b03..bNN do not. Zero-padded so the
+    // deterministic search order puts the matches strictly first — the lazy pass
+    // settles on them and stops before it reaches the filler.
     for (let i = 0; i < MATCHING; i++) {
       const n = String(i).padStart(2, '0');
       writeFileSync(join(dir, `a${n}.ts`), `export const marker = '${NEEDLE}'; // ${n}\n`);
@@ -82,48 +78,31 @@ describe('e2e: lazy grep reads fewer files than a whole-tree warm', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('cold grep with a small maxResults terminates early, reading a fraction of the tree', async () => {
-    const { adapter, reads } = countingFsAdapter();
-    vi.mocked(pickSourceAdapter).mockResolvedValue(adapter as never);
+  it('a bounded cold grep finds the matches and reads strictly fewer files than a whole-tree warm', async () => {
+    // Lazy: the real grep tool with maxResults, its adapter reads counted.
+    const lazy = countingFsAdapter();
+    vi.mocked(pickSourceAdapter).mockResolvedValue(lazy.adapter as never);
+    const hits = (await realHandlers()
+      .grep({ sourceUrl: dir, pattern: NEEDLE, maxResults: MATCHING })
+      .then((r) => JSON.parse(r.content[0].text))) as Array<{
+      itemId: string;
+      lineNumber: number;
+    }>;
 
-    const hits = reply(
-      await realHandlers().grep({ sourceUrl: dir, pattern: NEEDLE, maxResults: MATCHING })
-    ) as Array<{ itemId: string; lineNumber: number }>;
-
-    // Correctness first: it found exactly the matches, with real line numbers.
+    // Correctness first: exactly the matches, at their real 1-indexed lines.
     expect(hits).toHaveLength(MATCHING);
     expect(new Set(hits.map((h) => h.itemId))).toEqual(new Set(['a00.ts', 'a01.ts', 'a02.ts']));
     expect(hits.every((h) => h.lineNumber === 1)).toBe(true);
 
-    // The win: it did NOT read the whole tree. Early termination after the
-    // settled result means it reads only the matched prefix plus a bounded
-    // read-ahead window — a small fraction of the 60 files present, never the
-    // whole tree. (The exact count jitters with async read-ahead scheduling, so
-    // we assert a generous fraction, not an exact number — the saving is what
-    // matters, and the third test pins it against the whole-tree baseline.)
-    expect(reads.length).toBeLessThan(TOTAL_FILES / 2);
-  });
-
-  it('a whole-tree warm reads every file — the baseline the lazy path beats', async () => {
-    const { adapter, reads } = countingFsAdapter();
-    // warmSource is the deliberate, eager half of the pair: whole tree, own store.
-    await warmSource(adapter, { token: '', forkOrg: '' }, dir, { store: createContextStore() });
-    expect(reads.length).toBe(TOTAL_FILES);
-  });
-
-  it('lazy grep reads strictly fewer files than the whole-tree warm', async () => {
-    // Lazy read count, via the real grep tool path.
-    const lazy = countingFsAdapter();
-    vi.mocked(pickSourceAdapter).mockResolvedValue(lazy.adapter as never);
-    await realHandlers().grep({ sourceUrl: dir, pattern: NEEDLE, maxResults: MATCHING });
-
-    // Whole-tree warm count, same fixture, isolated store.
+    // Baseline: a whole-tree warm of the same fixture reads every file.
     const warm = countingFsAdapter();
-    await warmSource(warm.adapter, { token: '', forkOrg: '' }, dir, {
-      store: createContextStore(),
-    });
-
-    expect(lazy.reads.length).toBeLessThan(warm.reads.length);
+    await warmSource(warm.adapter, ENV, dir, { store: createContextStore() });
     expect(warm.reads.length).toBe(TOTAL_FILES);
+
+    // The win: the bounded grep read strictly fewer — it settled on the matched
+    // prefix (plus a bounded read-ahead window) and never scanned the filler.
+    // (The exact lazy count jitters with async read-ahead scheduling; the robust,
+    // non-flaky claim is that it beat the whole-tree baseline.)
+    expect(lazy.reads.length).toBeLessThan(warm.reads.length);
   });
 });

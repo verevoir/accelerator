@@ -1,10 +1,11 @@
 // @vitest-environment node
 //
-// E2E proof-of-function: exercise the real MCP source tools end to end against
-// a real filesystem fixture (no mocks). Each tool is driven through the exact
-// handler `registerSourceTools` registers on the server — the same path the
-// running MCP takes — and asserted on real fs I/O, so a green here means the
-// read/search/enumerate surface actually works, not that a mock was configured.
+// E2E proof-of-function for the READ/SEARCH/ENUMERATE tools (read_file, grep,
+// find_symbol, get_repo_tree, list_files) — exercised end to end against a real
+// filesystem fixture (no mocks), each through the exact handler
+// `registerSourceTools` registers on the server, the same path the running MCP
+// takes. A green here means that surface actually works. (The write/mutate tools
+// this same registration wires up are covered in e2e-cache-coherence.test.ts.)
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
@@ -13,7 +14,8 @@ import { join } from 'node:path';
 import { registerSourceTools } from '../src/tools/source.js';
 
 // Capture the handlers the real `registerSourceTools` wires up, so a test drives
-// each tool through its registered handler exactly as the MCP server would.
+// the tools under test through their registered handlers exactly as the MCP
+// server would (registerSourceTools wires 15; this file drives the 5 read tools).
 type Handler = (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
 function realHandlers(): Record<string, Handler> {
   const handlers: Record<string, Handler> = {};

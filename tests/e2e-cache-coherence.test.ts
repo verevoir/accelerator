@@ -8,7 +8,7 @@
 // which is the property a mid-session edit-then-read depends on.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerSourceTools } from '../src/tools/source.js';
@@ -34,6 +34,11 @@ describe('e2e: cache coherence across the MCP write/read boundary', () => {
   let tools: Record<string, Handler>;
 
   beforeEach(() => {
+    // A fresh temp dir per test isolates the process-level context cache without
+    // resetting it: the cache is keyed by sourceId (= this unique dir), so no
+    // entry from a prior test can be served here. This is the repo's convention
+    // (see edit-tools.test.ts) — and it is exactly the shared cache the write/read
+    // coherence below must exercise, not reset, to be a real test.
     dir = mkdtempSync(join(tmpdir(), 'e2e-cache-'));
     tools = realHandlers();
   });
@@ -98,5 +103,26 @@ describe('e2e: cache coherence across the MCP write/read boundary', () => {
       content: string;
     };
     expect(res.content).toBe('hello fresh');
+  });
+
+  it('the write surface confines to the source root — a traversal path is rejected, nothing escapes', async () => {
+    // write_file / edit_file reach the real fs write path with no mock, so the
+    // confinement invariant (a path may not escape sourceUrl) is a security-critical
+    // boundary this suite must prove, not just the happy path.
+    const escape = join(dir, '..', 'escaped-by-traversal.txt');
+    await expect(
+      tools.write_file({ sourceUrl: dir, path: '../escaped-by-traversal.txt', content: 'pwned' })
+    ).rejects.toThrow();
+    expect(existsSync(escape)).toBe(false); // nothing was written outside the root
+
+    // edit_file guards the same boundary.
+    await expect(
+      tools.edit_file({
+        sourceUrl: dir,
+        path: '../../etc-shadow',
+        oldString: 'x',
+        newString: 'y',
+      })
+    ).rejects.toThrow();
   });
 });
