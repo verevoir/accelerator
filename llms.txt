@@ -53,9 +53,11 @@ Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
 
 This repo runs the gate; the reviewer's provision comes from the private
 @verevoir/capabilities (git-installed per .github/antagonistic-review/mcp.json).
-Two org secrets: CUTOVER_PUSH_TOKEN (Contents:read — clones the private
-capabilities MCP + reads the corpus) and CLAUDE_CODE_OAUTH_TOKEN (reviewer model
-credential). Full gate config is in the capabilities docs (it is the reviewer
+Credentials: a GitHub App (org secrets VEREVOIR_APP_ID + VEREVOIR_APP_PRIVATE_KEY)
+mints a per-run, least-privilege token scoped to just the repos the gate reads —
+no standing PAT — plus a reviewer model credential (CLAUDE_CODE_OAUTH_TOKEN, or
+ANTHROPIC_API_KEY). Gate scripts: aggregate.sh (decision) + resolve-merge-base.sh
+(diff range). Full gate config is in the capabilities docs (it is the reviewer
 engine).
 
 ## Bins

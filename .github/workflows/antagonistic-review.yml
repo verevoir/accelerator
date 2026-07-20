@@ -33,9 +33,22 @@
 # the aggregator log; the panel needs no PR write access, so `pull-requests: write` is not
 # granted.
 #
-# BOOTSTRAP: `pull_request_target` evaluates from base, so the panel cannot run on the PR
-# that first introduces or changes THIS file — that one merge is a human-reviewed
-# bootstrap. Every subsequent PR is gated normally.
+# FORKS: the review job carries a same-repo guard (`if:` on the job) — a fork PR SKIPS
+# the panel entirely, the aggregator fails closed on the missing verdicts, and the merge
+# waits on human review. Panelists (and the org secrets `pull_request_target` grants
+# them) therefore only ever run for same-repo heads, closing the strongest residual of
+# the old posture: a prompt-injected panelist abusing the job's credentials on a
+# fork-authored diff. The read-only head discipline below still holds (reviewed code is
+# never checked out or executed, on any PR that reaches the panel), and Actions'
+# "Require approval for all outside collaborators" remains worth setting as
+# defence-in-depth — a GitHub setting this file cannot enforce; verify it, do not
+# assume it.
+#
+# BOOTSTRAP: `pull_request_target` evaluates from base, so the PR that first introduces
+# THIS file merges as a human-reviewed bootstrap (no panel exists yet to run). A PR that
+# CHANGES this file is still gated — by the previous version of the panel from base; the
+# changed gate takes effect only after merge. The same applies to the gate's scripts
+# (aggregate.sh, resolve-merge-base.sh): they are fetched from base too.
 
 name: Antagonistic review
 
@@ -57,9 +70,17 @@ jobs:
   review:
     name: review (${{ matrix.lens }})
     runs-on: ubuntu-latest
-    # envelope exceeds the sum of the inner step bounds (checkout 5m + head-fetch 2m +
-    # MCP setup 8m + model 12m = 27m) so the step timeouts, not this backstop, bind
-    timeout-minutes: 30
+    # Hard control on the pull_request_target secret surface: panelists (and the org
+    # secrets they hold) only run for same-repo heads. A fork PR skips the panel, the
+    # aggregator fails closed on the missing verdicts, and a human reviews it instead.
+    # workflow_dispatch still enters and is refused by the resolve step's vacuous guard.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    # Every step below carries its own timeout-minutes; this job envelope is only a
+    # backstop ABOVE their sum (mint 5 + preflight 2 + checkout 5 + head-fetch 3 +
+    # resolve-merge-base 2 + url-rewrite 2 + MCP pre-build 10 + model 12 +
+    # publish 5 + verdict-surface 2 = 48m), so a hung step fails legibly at the
+    # step, not here.
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       matrix:
@@ -101,6 +122,7 @@ jobs:
       # credential is fail-closed by construction.
       - name: Mint an ephemeral GitHub App token (reviewer-MCP clone + corpus read)
         id: app-token
+        timeout-minutes: 5
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
         with:
           app-id: ${{ secrets.VEREVOIR_APP_ID }}
@@ -109,6 +131,7 @@ jobs:
           repositories: capabilities,aigency-guardrails
 
       - name: Fail loud if the reviewer cannot run (no rubric = no review)
+        timeout-minutes: 2
         env:
           GATE_TOKEN: ${{ steps.app-token.outputs.token }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -139,32 +162,40 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
           fetch-depth: 0 # full history so the reviewer can find the merge-base for the diff
 
-      # A workflow_dispatch (or any non-PR trigger) collapses BASE == HEAD, giving an
-      # empty diff a panelist would trivially APPROVE — a vacuous pass on a REQUIRED
-      # check. Refuse it: only a real PR with a distinct head is reviewable.
-      - name: Guard against an empty diff (no real change to review)
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          if [ "$BASE_SHA" = "$HEAD_SHA" ]; then
-            echo "::error title=No change to review::BASE and HEAD are the same commit (no pull request). Failing closed."
-            exit 1
-          fi
-
       - name: Fetch the PR head for review (read-only — never checked out or executed)
+        timeout-minutes: 3
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: timeout 120 git fetch --no-tags origin "$HEAD_SHA"
 
+      # `event.pull_request.base.sha` is FROZEN at PR-open: once the author merges main
+      # into the branch, diffing from it makes all merged-main content look like the
+      # PR's own change (a misattribution the frozen sha causes). Diff instead
+      # from the merge-base of the CURRENT base-branch tip and the head — the PR's true
+      # divergence point. The script (extracted like aggregate.sh, unit-tested, run from
+      # the base checkout) also validates its sha/ref inputs and refuses a vacuous pass:
+      # merge-base == HEAD means there is no diff of the PR's own to review (a
+      # workflow_dispatch run, or a head already contained in the base branch), while a
+      # PR that merged main in but has its own commits has a distinct merge-base and
+      # passes.
+      - name: Resolve the merge base (the PR's true divergence point)
+        timeout-minutes: 2
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref || github.ref_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash .github/antagonistic-review/resolve-merge-base.sh
+
       # `npx github:verevoir/capabilities` (spawned per mcp.json) has to CLONE that
       # private repo. Route git over HTTPS with the same token.
       - name: Rewrite ssh github URLs to https (for the public accelerator dep)
+        timeout-minutes: 2
         run: |
           git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
           git config --global --add url."https://github.com/".insteadOf "git@github.com:"
 
       - name: Pre-build the reviewer MCP (@verevoir/capabilities)
+        timeout-minutes: 10 # backstop above the inner curl/git/npm timeouts (30+120+60+300s ≈ 8.5m)
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
@@ -178,7 +209,7 @@ jobs:
           # Pin the reviewer MCP to an IMMUTABLE commit (not a moveable tag), then
           # `npm ci` against its committed lockfile — integrity-checked, audited and
           # reproducible, so the rubric-loading dependency is verifiable.
-          CAPS_SHA="bca3a42dfd9a44c6341873f90ed78c29bacb6a21"
+          CAPS_SHA="5cc991a54669bdd292fdb428185857d254bbafa2"
           rm -rf "$D"
           # Auth as a repo-local http.extraheader (see the file header for why) — written
           # via a redirect so the token stays out of argv, and masked in logs.
@@ -209,8 +240,10 @@ jobs:
           # the MCP (mcp.json) reads the corpus with this ephemeral, scoped token.
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           # the change under review, as commit shas — the working tree is BASE, so the
-          # reviewer reads the HEAD only through git (never a checked-out, executable tree).
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          # reviewer reads the HEAD only through git (never a checked-out, executable
+          # tree). BASE_SHA is the resolved MERGE-BASE (not the frozen event base sha),
+          # so merged-main content is never misattributed to the PR.
+          BASE_SHA: ${{ env.MERGE_BASE }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         with:
           # Pass both; the Claude Code CLI uses the OAuth token over the API key
@@ -280,7 +313,9 @@ jobs:
             WHAT TO DO:
             1. The change is the diff BASE...HEAD. Run `git diff "$BASE_SHA...$HEAD_SHA"` for the full
                diff, and read any changed file's full content with `git show "$HEAD_SHA":<path>`. The
-               working tree is the BASE revision (the gate's own config); review the HEAD via git.
+               working tree is the gate's own config, checked out at the base branch; the BASE_SHA
+               env var carries the MERGE-BASE of the PR against the live base ref (not the working
+               tree's commit), so the diff covers only the PR's own divergence. Review the HEAD via git.
                You are judging the POST-CHANGE state at HEAD. Content shown as REMOVED (a `-` line) is
                gone from the result: do not describe it as still present, and do not cite a claim the
                change has already deleted as a live defect. Removing it may be exactly what the change
@@ -288,6 +323,16 @@ jobs:
                check, or validation), so judge whether a removal is correct, not merely that it happened.
                Before citing any finding that depends on content being present at HEAD, confirm it with
                `git show "$HEAD_SHA":<path>`.
+               STRUCTURAL RULES for every finding — a finding that breaks either is invalid and must be
+               dropped before you write your verdict:
+               - EVIDENCE: each blocking finding must embed a short verbatim quote of the defective
+                 content, obtained from `git show "$HEAD_SHA":<path>` or a `+` line of the diff. The
+                 working tree is the BASE, not the change — never cite working-tree file contents as
+                 evidence about this PR.
+               - SCOPE: findings may only target files listed by
+                 `git diff --name-only "$BASE_SHA...$HEAD_SHA"`. Base-resident files — including the
+                 gate's own workflow, scripts, and tests when this diff does not touch them — are out
+                 of scope no matter what you notice in them.
             2. Provision the rubric, then review the change against it adversarially THROUGH YOUR LENS.
             3. Write your verdict to `.antagonistic-review/verdict.json` (create the directory) as:
                { "verdict": "APPROVE" | "REJECT", "summary": "<one line>", "findings": ["<finding>", ...] }
@@ -305,12 +350,50 @@ jobs:
       # aggregator fails closed on the missing artifact.
       - name: Publish this lens's verdict
         if: always()
+        timeout-minutes: 5
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: verdict-${{ matrix.lens }}
           path: .antagonistic-review/verdict.json
           if-no-files-found: ignore
           retention-days: 7
+
+      # Display-only: make a REJECT visible at a glance in the checks UI by failing
+      # THIS job when its own lens objected (otherwise every lens job greens and only
+      # the aggregator reddens — you can't see which lens it was). `if: always()` is
+      # load-bearing: the review action may itself exit non-zero on a REJECT, and the
+      # skip-on-failure default would suppress this step in exactly the case it exists
+      # to show (the missing-verdict branch covers a run that died before writing one).
+      # The AGGREGATOR remains the gate: this step runs after the verdict is published
+      # above, so it can only FAIL a job, never turn a REJECT into a pass and never
+      # keep a verdict from the aggregator (which runs on `needs: review` +
+      # `if: always()`). The summary is model-controlled: first line only, capped,
+      # percent-encoded (the runner decodes %0A/%0D inside a `::` command's value, so
+      # `%` must become `%25` before embedding), and any line-starting `::`
+      # neutralised as belt-and-braces.
+      - name: Surface this lens's verdict as the job conclusion
+        if: always()
+        timeout-minutes: 2
+        run: |
+          f=.antagonistic-review/verdict.json
+          if [ ! -f "$f" ]; then
+            echo "::error title=${{ matrix.lens }} produced no verdict::The panelist did not write a verdict — the aggregator fails closed on the missing artifact."
+            exit 1
+          fi
+          # Bound each jq parse of the panelist-controlled verdict (same threat jq_bounded
+          # caps in aggregate.sh): a pathological payload fails this lens closed, never
+          # holds the step. Runner always has coreutils timeout.
+          v="$(timeout 10 jq -r '.verdict // empty' "$f" 2>/dev/null || echo '')"
+          if [ "$v" != "APPROVE" ]; then
+            # Sanitise in the same order as aggregate.sh's safe(): strip CR (a literal \r
+            # is a line terminator to the runner, so '\r::set-env' would open a command the
+            # ^:: sed never sees), %-encode (a %0A/%0D escape would be decoded inside the
+            # ::error value into a newline + fresh command), then neutralise a line-start ::.
+            summary="$(timeout 10 jq -r '.summary // ""' "$f" 2>/dev/null | head -1 | cut -c1-300 | tr -d '\r' | sed -e 's/%/%25/g' -e 's/^::/ ::/' || true)"
+            echo "::error title=${{ matrix.lens }} rejected::${summary}"
+            exit 1
+          fi
+          echo "${{ matrix.lens }} — APPROVE"
 
   # The gate: union every lens's verdict and fail closed. This is the REQUIRED status
   # check. `if: always()` so it runs even when a panelist job failed — a missing or
@@ -321,7 +404,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: review
     if: always()
-    timeout-minutes: 10 # bound the aggregator's own work (artifact download + union)
+    # envelope exceeds the sum of its step bounds (checkout 5m + download 5m +
+    # union 3m = 13m) so the step timeouts, not this backstop, bind
+    timeout-minutes: 15
     steps:
       - name: Check out the aggregator script (from base — the gate's own logic)
         timeout-minutes: 5
@@ -330,9 +415,11 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha || github.sha }}
 
       - name: Collect the panel's verdicts
+        timeout-minutes: 5
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: verdicts
 
       - name: Union the findings and gate on unanimous approval
+        timeout-minutes: 3
         run: bash .github/antagonistic-review/aggregate.sh verdicts
