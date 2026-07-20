@@ -23,7 +23,7 @@ a model key).
 { "command": "npx", "args": ["-y", "@verevoir/accelerator"] }
 
 // or straight from the repo (builds on install via `prepare`)
-{ "command": "npx", "args": ["-y", "github:verevoir/accelerator#v0.1.3"] }
+{ "command": "npx", "args": ["-y", "github:verevoir/accelerator#v0.1.5"] }
 ```
 
 The `github:` form is what `@verevoir/capabilities` uses as a dependency, so the

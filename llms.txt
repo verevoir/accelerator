@@ -14,7 +14,7 @@ it only ever needs source/board credentials — never a model API key.
 Public, two ways:
 
     npx -y @verevoir/accelerator                      # npm (published)
-    npx -y github:verevoir/accelerator#v0.1.3         # from the repo (builds on install)
+    npx -y github:verevoir/accelerator#v0.1.5         # from the repo (builds on install)
 
 MCP client config: { "command": "npx", "args": ["-y", "@verevoir/accelerator"] }
 
