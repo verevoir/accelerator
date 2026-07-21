@@ -309,6 +309,17 @@ jobs:
               change caused it, it is in.
             - Still block on the change's OWN defects: incorrect changed code, a changed behaviour left
               untested, a document this change made stale or wrong, or a value the change got wrong.
+            - ILLUSTRATIVE SNIPPETS are judged ONLY on the point they illustrate. Pseudo-code, a
+              documentation example, or a labelled teaching specimen (e.g. an accept/reject example in a
+              corpus dataset) is intrinsically INCOMPLETE — it exists to demonstrate ONE point, not to be
+              production-ready. This binds EVERY lens, yours included: your concern is a finding only when
+              the flaw COMPROMISES the point the snippet illustrates. Incidental incompleteness — an
+              unhandled unrelated error, a missing import, a hardcoded value or unsanitised log line in an
+              example about something else, absent surrounding wiring — is NOT a finding, because
+              completeness was never the snippet's job. A snippet is also NEVER accompanied by tests: it
+              is an illustration, not code under test, so "this specimen has no test" is never a finding
+              against it. Block only when the snippet is wrong about, or its flaw directly undercuts, the
+              very thing it is there to show.
 
             WHAT TO DO:
             1. The change is the diff BASE...HEAD. Run `git diff "$BASE_SHA...$HEAD_SHA"` for the full
