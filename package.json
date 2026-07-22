@@ -7,6 +7,7 @@
   "bin": {
     "accelerator": "./dist/bin.js",
     "verevoir-accelerator": "./dist/bin.js",
+    "verevoir-accelerator-http": "./dist/http-bin.js",
     "verevoir-card-sync": "./dist/card-sync-bin.js",
     "verevoir-audit-trace": "./dist/audit-trace-bin.js"
   },
@@ -36,6 +37,7 @@
     "lint": "prettier --check .",
     "format": "prettier --write .",
     "start": "node dist/bin.js",
+    "start:http": "node dist/http-bin.js",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "prepare": "npm run build"
   },

@@ -31,6 +31,10 @@ split: commodity server gets the code/board keys, the moat gets the model keys.
 - TRELLO_API_KEY / TRELLO_API_TOKEN / TRELLO_REFERER — Trello work-tracker.
 - AIGENCY_AUDIT / AIGENCY_AUDIT_DIR — emit audit spans + where to write them.
 - OTEL_EXPORTER_OTLP_ENDPOINT — OTLP export of spans.
+- PORT / HOST — the verevoir-accelerator-http bin only: its listen port
+  (default 3000) and bind address (default 127.0.0.1; exposing off-box is a
+  deliberate hosting choice). The startHttp() library API defaults the port to
+  0 (OS-assigned).
 
 Public repos / local paths need no token; tokens gate private sources + writes.
 
@@ -50,7 +54,7 @@ whole-source warm + search. An optional prefix scopes grep/warm to one subtree.
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
-/router, /audit, /metering, /result, /edit, /cache, /mutate, /graph, /architecture, /manifest,
+/router, /audit, /metering, /result, /edit, /cache, /mutate, /http, /graph, /architecture, /manifest,
 /instructions, /loop/evals, /loop/refine, /loop/search, /tools/source,
 /tools/workflow. @verevoir/capabilities imports these.
 
@@ -67,7 +71,9 @@ engine).
 
 ## Bins
 
-accelerator / verevoir-accelerator (server), verevoir-card-sync, verevoir-audit-trace.
+accelerator / verevoir-accelerator (stdio server), verevoir-accelerator-http
+(streamable-HTTP server — one process, many sessions, shared cache; PORT/HOST),
+verevoir-card-sync, verevoir-audit-trace.
 
 ## Publishing / consumption
 
