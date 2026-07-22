@@ -38,13 +38,14 @@ config and a needless secret exposure. That asymmetry is deliberate: the split
 lets you hand the commodity server the keys that read your code and boards, and
 keep the model keys on the moat.
 
-| Env var                                                | Why the server needs it                                                                                                                                                                                    |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GITHUB_TOKEN`                                         | GitHub source adapter — `read_file`/`grep`/`find_symbol`/`code_graph`, and `write_file`/`edit_file`/`multi_edit`/`insert`/`delete_block`/`commit_files`/`ensure_fork`/`ensure_branch`/`open_pull_request`. |
-| `NOTION_API_KEY`                                       | Notion source (pages as a file tree) **and** the Notion work-tracker board (`list_cards`/`create_card`/…).                                                                                                 |
-| `TRELLO_API_KEY`, `TRELLO_API_TOKEN`, `TRELLO_REFERER` | Trello work-tracker backend, when the board is Trello.                                                                                                                                                     |
-| `AIGENCY_AUDIT`, `AIGENCY_AUDIT_DIR`                   | Emit audit spans (the shared telemetry lib lives here) and where to write them.                                                                                                                            |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                          | OTLP export of those spans to a collector.                                                                                                                                                                 |
+| Env var                                                | Why the server needs it                                                                                                                                                                                                                           |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_TOKEN`                                         | GitHub source adapter — `read_file`/`grep`/`find_symbol`/`code_graph`, and `write_file`/`edit_file`/`multi_edit`/`insert`/`delete_block`/`commit_files`/`ensure_fork`/`ensure_branch`/`open_pull_request`.                                        |
+| `NOTION_API_KEY`                                       | Notion source (pages as a file tree) **and** the Notion work-tracker board (`list_cards`/`create_card`/…).                                                                                                                                        |
+| `TRELLO_API_KEY`, `TRELLO_API_TOKEN`, `TRELLO_REFERER` | Trello work-tracker backend, when the board is Trello.                                                                                                                                                                                            |
+| `AIGENCY_AUDIT`, `AIGENCY_AUDIT_DIR`                   | Emit audit spans (the shared telemetry lib lives here) and where to write them.                                                                                                                                                                   |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                          | OTLP export of those spans to a collector.                                                                                                                                                                                                        |
+| `PORT`, `HOST`                                         | The `verevoir-accelerator-http` bin only: its listen port (default `3000`) and bind address (default `127.0.0.1`; exposing off-box is a deliberate hosting choice). The `startHttp()` library API instead defaults the port to `0` (OS-assigned). |
 
 Local paths and public GitHub repos need no token; the tokens gate private
 sources and writes.
@@ -65,9 +66,9 @@ symbol index stay correct across a session.
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
-`/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/graph`,
-`/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`, `/loop/search`,
-`/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
+`/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
+`/graph`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
+`/loop/search`, `/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
 dependency direction is **capabilities → accelerator** (never the reverse), which
 keeps governance out of the commodity layer.
 
@@ -89,8 +90,10 @@ PAT), plus a reviewer model credential (`CLAUDE_CODE_OAUTH_TOKEN`, or
 
 ## Bins
 
-`accelerator` / `verevoir-accelerator` (server), `verevoir-card-sync`,
-`verevoir-audit-trace`.
+`accelerator` / `verevoir-accelerator` (stdio server),
+`verevoir-accelerator-http` (streamable-HTTP server — one long-lived process
+serving many sessions that share one warm cache; `PORT` / `HOST`),
+`verevoir-card-sync`, `verevoir-audit-trace`.
 
 ## Licence
 
