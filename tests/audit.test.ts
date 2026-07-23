@@ -216,6 +216,16 @@ describe('when audit mode is "verbose"', () => {
     const [s] = readSpans(tmpAuditDir);
     expect(s.attributes?.cost_rollup).toBeCloseTo(0.0012);
   });
+
+  it('a rates snapshot on a capability span round-trips through the JSONL', () => {
+    const { finish } = openSpan('delegate', 'capability');
+    const rates = { 'claude-opus-4-8': [5, 25] as const, 'claude-haiku-4-5': [1, 5] as const };
+    finish({ cost_rollup: 0.0012, rates });
+    const [s] = readSpans(tmpAuditDir);
+    // The span is self-describing: tokens (elsewhere), the span's own timestamp, and
+    // the rates that priced it — frozen together, recomputable from the span alone.
+    expect(s.attributes?.rates).toEqual(rates);
+  });
 });
 
 // ── Session gap ───────────────────────────────────────────────────────────────

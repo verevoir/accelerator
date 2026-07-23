@@ -47,6 +47,11 @@ export function auditSpanToOtlp(s: AuditSpan, opts: { elideNotes?: boolean } = {
       if (v === undefined || v === null) continue;
       if (typeof v === 'number') {
         attrs.push({ key: k, value: { intValue: String(Math.round(v)) } });
+      } else if (typeof v === 'object') {
+        // Structured attributes (e.g. the `rates` snapshot) — JSON-encode so the
+        // value survives the OTLP boundary. Plain `String(v)` would flatten any
+        // object to "[object Object]" and silently lose it.
+        attrs.push({ key: k, value: { stringValue: JSON.stringify(v) } });
       } else {
         attrs.push({ key: k, value: { stringValue: String(v) } });
       }
