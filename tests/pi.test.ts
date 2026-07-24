@@ -164,5 +164,44 @@ describe('installAcceleratorPlugin', () => {
     expect(
       await handler!({ type: 'tool_call', toolCallId: '3', toolName: 'read', input: {} }, ctx)
     ).toBeUndefined();
+    // pi fires tool_call for the accelerator's OWN tools too: an in-scope
+    // accelerator read tool must pass the gate, else governance breaks the plugin.
+    expect(
+      await handler!({ type: 'tool_call', toolCallId: '4', toolName: 'read_file', input: {} }, ctx)
+    ).toBeUndefined();
+  });
+
+  it('still blocks out-of-scope accelerator tools through the gate when governance is on', async () => {
+    process.env.ACCELERATOR_TOOLS = 'read';
+    process.env.ACCELERATOR_GOVERN_NATIVE = '1';
+    const { pi, getHandler } = mockPi();
+    installAcceleratorPlugin(pi);
+
+    const handler = getHandler();
+    const ctx: PiExtensionContext = { hasUI: false };
+    // write_file is not in the read scope — never registered, and blocked here too.
+    expect(
+      await handler!({ type: 'tool_call', toolCallId: '1', toolName: 'write_file', input: {} }, ctx)
+    ).toMatchObject({ block: true });
+  });
+});
+
+describe('buildPiHost error signalling', () => {
+  it('throws when the underlying handler reports isError (pi records failures via throw)', async () => {
+    const { pi, tools } = mockPi();
+    buildPiHost(pi).registerTool('boom', { description: 'always fails' }, async () => ({
+      content: [{ type: 'text', text: 'kaboom' }],
+      isError: true,
+    }));
+    await expect(tools[0].execute('call-1', {})).rejects.toThrow('kaboom');
+  });
+
+  it('does not throw for a successful result', async () => {
+    const { pi, tools } = mockPi();
+    buildPiHost(pi).registerTool('ok', { description: 'succeeds' }, async () => ({
+      content: [{ type: 'text', text: 'fine' }],
+    }));
+    const result = await tools[0].execute('call-1', {});
+    expect(result.content).toEqual([{ type: 'text', text: 'fine' }]);
   });
 });

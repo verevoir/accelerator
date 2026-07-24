@@ -70,7 +70,13 @@ ACCELERATOR_TOOLS='read_file,open_pull_request' pi ...
 
 **Honest framing:** this is a **policy + least-privilege + audit layer, not a
 sandbox.** It fails closed and keeps out-of-scope tools unregistered, but pi's
-`bash` remains unbounded once granted. The real isolation boundary is **running
+`bash` remains unbounded once granted. Note that under `ACCELERATOR_GOVERN_NATIVE`
+native `bash` is classed as `write-local`, so granting `write-local` also grants
+an **unbounded shell** that can `git push` or write to the board — it effectively
+subsumes `write-github` and `cards-write`. The class split constrains the
+accelerator's own tools by blast radius, not native `bash`; withhold
+`write-local` (or native governance, or pi's `bash`) if that shell must not
+exist. The real isolation boundary is **running
 pi in a container** — the scope layer narrows what the agent is handed; the
 container is what contains it. See
 [`docs/2026-07-24-pi-plugin-and-permissions.md`](docs/2026-07-24-pi-plugin-and-permissions.md).

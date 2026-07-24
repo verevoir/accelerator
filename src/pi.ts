@@ -39,7 +39,6 @@ export interface PiToolContent {
 export interface PiToolResult {
   content: PiToolContent[];
   details?: unknown;
-  isError?: boolean;
 }
 
 export interface PiToolDefinition {
@@ -133,11 +132,22 @@ export function buildPiHost(pi: PiExtensionAPI): ToolHost {
       parameters: toParameters(config.inputSchema),
       execute: async (_toolCallId, params) => {
         const result = await handler(params ?? {});
-        return {
-          content: (result.content ?? []).map((c) => ({ type: 'text', text: c.text })),
-          details: undefined,
-          isError: result.isError,
-        };
+        const content = (result.content ?? []).map((c) => ({
+          type: 'text' as const,
+          text: c.text,
+        }));
+        // pi records success/failure by whether `execute` throws — it does NOT
+        // read a result-level `isError` (AgentToolResult has no such field). An
+        // MCP handler signals failure with `isError: true`, so translate that
+        // into a throw; otherwise the model would see a failed call as a success.
+        if (result.isError) {
+          const message = content
+            .map((c) => c.text)
+            .join('\n')
+            .trim();
+          throw new Error(message || `tool call failed`);
+        }
+        return { content, details: undefined };
       },
     });
     return undefined;
