@@ -173,6 +173,20 @@ describe('gateNativeToolCall', () => {
     expect(decision).toMatchObject({ block: true });
     expect(decision?.reason).toContain('exfiltrate');
   });
+
+  it('lets an in-scope accelerator tool through the gate (pi fires tool_call for every tool)', () => {
+    // These are accelerator tools, not pi natives — the gate must not re-block
+    // what `withScope` already admitted, else native governance breaks the plugin.
+    expect(gateNativeToolCall('read_file', read)).toBeUndefined();
+    expect(gateNativeToolCall('list_cards', read)).toBeUndefined();
+    expect(gateNativeToolCall('write_file', local)).toBeUndefined();
+  });
+
+  it('blocks an accelerator tool the scope did NOT admit', () => {
+    // write_file is out of scope under read-only, so it is never registered and
+    // must not slip through the native gate either.
+    expect(gateNativeToolCall('write_file', read)).toMatchObject({ block: true });
+  });
 });
 
 describe('MCP path unchanged', () => {

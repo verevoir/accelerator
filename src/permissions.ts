@@ -70,16 +70,25 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
  * applies ONE policy across accelerator tools and pi's own read/grep/find/ls
  * and write/edit/bash. `bash` is unbounded (it can push to GitHub or delete
  * files), so it is gated behind `write-local` at minimum and — like every
- * mutating native tool — is blocked under a read-only scope. This is a POLICY
- * layer, not a sandbox: the real isolation boundary is running pi in a
- * container.
+ * mutating native tool — is blocked under a read-only scope.
+ *
+ * CAVEAT — `write-local` grants a shell that subsumes the other write classes.
+ * Because `bash` is here under `write-local`, granting `write-local` for local
+ * edits also grants an unbounded shell that can `git push` or write to the
+ * board — i.e. it effectively subsumes `write-github` and `cards-write`. The
+ * class split therefore constrains the accelerator's OWN tools by blast radius,
+ * but NOT native `bash`: withhold `write-local` (or native governance, or
+ * pi's `bash`) if that shell must not exist. A dedicated `shell` class that
+ * separates `bash` from local file edits is left as a deliberate follow-up.
+ *
+ * This is a POLICY layer, not a sandbox: the real isolation boundary is running
+ * pi in a container.
  */
 export const NATIVE_TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   read: 'read',
   grep: 'read',
   find: 'read',
   ls: 'read',
-  glob: 'read',
   write: 'write-local',
   edit: 'write-local',
   bash: 'write-local',
@@ -187,11 +196,20 @@ export interface NativeGateDecision {
  * `undefined` when the call is ALLOWED (a pi `tool_call` handler then returns
  * nothing and execution proceeds); otherwise a `{ block, reason }` decision.
  *
+ * pi's `tool_call` event fires before EVERY tool — including the accelerator's
+ * own registered tools — so the gate must first let an in-scope accelerator tool
+ * through: it was only registered because `withScope` already admitted it, so
+ * re-blocking it here would make the plugin unusable whenever native governance
+ * is on. Only genuine native (or unrecognised) tools reach the class check.
+ *
  * Fail-closed: an unclassified native tool, or one whose class the scope does
  * not grant, is blocked. There is no consent prompt — an out-of-scope call is
  * never auto-allowed, with or without a UI.
  */
 export function gateNativeToolCall(toolName: string, scope: Scope): NativeGateDecision | undefined {
+  // An accelerator tool the scope admitted (and `withScope` therefore
+  // registered) is already governed at registration time — allow it through.
+  if (scope.tools.has(toolName)) return undefined;
   const cls = NATIVE_TOOL_CLASSES[toolName];
   if (cls && scope.classes.has(cls)) return undefined;
   const reason = cls
