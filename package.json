@@ -29,6 +29,11 @@
     "instructions.md",
     "llms.txt"
   ],
+  "pi": {
+    "extensions": [
+      "./dist/pi.js"
+    ]
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
