@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolHost } from '../permissions.js';
 import { grepSource, warmSource, wrapWithCache } from '@verevoir/context';
 import { findSymbols } from '@verevoir/context/code';
 import { pickSourceAdapter, resolveSourceEnv } from '../router.js';
@@ -48,7 +48,7 @@ export function ghOwner(repoUrl: string): string {
   return m[1];
 }
 
-export function registerSourceTools(server: McpServer): void {
+export function registerSourceTools(server: ToolHost): void {
   // -------------------------------------------------------------------------
   // read_file
   // -------------------------------------------------------------------------
