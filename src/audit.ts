@@ -10,8 +10,9 @@ import { otlpEnvelope, auditSpanToOtlp } from './otlp.js';
 //   'on'      — span fields only: trace_id, span_id, parent_span_id, name,
 //               kind, start, end, duration_ms, note (when derivable).
 //   'verbose' — the above plus an `attributes` object: model, tokens_in,
-//               tokens_out, cached, cost per span, and a capability-level
-//               cost rollup on the root span.
+//               tokens_out, cached, cost per span, and — on a capability
+//               (root) span — a cost rollup plus a dated `rates` snapshot
+//               (the per-model rate table that priced it).
 //
 // Session: a burst of activity within AIGENCY_AUDIT_SESSION_GAP seconds of
 // the previous entry (default 120s). A gap wider than that starts a new file
@@ -165,6 +166,14 @@ export interface AuditSpan {
     cached?: number;
     cost?: number;
     cost_rollup?: number; // capability-level total cost
+    /** Rate snapshot for the models this span touched, captured at emission —
+     * `model id → [input, output, cacheRead?, cacheWrite?]` per million tokens
+     * (llm's `RateTuple`). A rate is a fact at a point in time, not a forever
+     * constant: freezing it onto the span alongside the tokens and the span's own
+     * timestamp makes the cost self-describing and recomputable (tokens × rates),
+     * so later catalog drift can never restate a closed span's cost. Emitters snapshot
+     * it from the catalog-of-the-day; consumers price from here, not from live code. */
+    rates?: Record<string, readonly [number, number, number?, number?]>;
   };
 }
 

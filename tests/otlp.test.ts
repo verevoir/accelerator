@@ -37,6 +37,19 @@ describe('otlp mapping', () => {
     expect(byKey['cached']).toEqual({ intValue: '5' });
   });
 
+  it('JSON-encodes a structured attribute (the rates snapshot) instead of losing it to "[object Object]"', () => {
+    const rates = { 'claude-opus-4-8': [5, 25] as const };
+    const byKey = Object.fromEntries(
+      auditSpanToOtlp(span({ attributes: { cost_rollup: 1, rates } })).attributes.map((a) => [
+        a.key,
+        a.value,
+      ])
+    );
+    expect(byKey['rates']).toEqual({ stringValue: JSON.stringify(rates) });
+    // and it round-trips back to the original table
+    expect(JSON.parse((byKey['rates'] as { stringValue: string }).stringValue)).toEqual(rates);
+  });
+
   it('includes note/purpose by default, omits them with elideNotes', () => {
     const s = span({ note: 'a prompt excerpt', purpose: 'recruit-ee' });
     const keys = (opts?: { elideNotes?: boolean }) =>
