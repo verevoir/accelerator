@@ -54,3 +54,12 @@ When something is wrong, or a change needs to land in many places, ask whether y
 - **One change, one purpose.** Keep commits and PRs single-purpose, and state how you verified them (tests run, checks passed). Prefer a stack of small PRs over one omnibus diff.
 - **Code changes are gated by antagonistic review where a project adopts it.** When a project's git-ops includes the `antagonistic-review-established` gate, every change is blocked behind an independent, adversarial review against the provisioned practices — a brief never has to ask for it. The gate fails loud: a reviewer that cannot run (no credential, out of tokens) blocks and surfaces the change, never self-merges, skips, or rewrites the check to get past it.
 - **Trust git for merge state, not `gh`.** In a multi-repo workspace `gh` infers the repo from the current directory, so `gh pr view N` can silently report a _different_ repo's PR (tell-tale: a `mergedAt` that predates the PR's creation). Pass `--repo owner/name` on every `gh` call, and confirm a merge with git — `git fetch && git merge-base --is-ancestor <sha> origin/main` — not `gh pr view`.
+
+## Running under pi (permissions scope)
+
+The same tools can be loaded as a **pi plugin** instead of an MCP server (via the `pi.extensions` entry in `package.json`). Under pi the toolbelt is gated by an annotation-driven least-privilege scope, controlled by two env knobs:
+
+- **`ACCELERATOR_TOOLS`** — comma-separated tool **classes** (`read`, `write-local`, `write-github`, `cards-write`) and/or explicit tool names that may register. Default when unset: `read`. Out-of-scope tools are never registered (fail-closed); unknown entries are ignored with a warning.
+- **`ACCELERATOR_GOVERN_NATIVE`** — when truthy, applies the same scope policy to pi's own native tools (`read`/`grep`/`find`/`ls`/`write`/`edit`/`bash`) via a `tool_call` gate that blocks out-of-scope calls. Default off.
+
+This is a **policy + least-privilege + audit layer, not a sandbox**: it narrows what the agent is handed and fails closed, but `bash` is unbounded once granted — the real isolation boundary is running pi in a **container**.

@@ -29,6 +29,11 @@
     "instructions.md",
     "llms.txt"
   ],
+  "pi": {
+    "extensions": [
+      "./dist/pi.js"
+    ]
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
@@ -59,7 +64,8 @@
     "tree-sitter-python": "0.23.4",
     "tree-sitter-scala": "0.24.0",
     "tree-sitter-typescript": "^0.23.2",
-    "yaml": "^2.0.0"
+    "yaml": "^2.0.0",
+    "zod": "^4"
   },
   "devDependencies": {
     "@types/node": "^25.8.0",
