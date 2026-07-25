@@ -131,10 +131,13 @@ describe('accelerator HTTP transport — one process, many sessions', () => {
     }
   });
 
-  it('fails closed when the authorize hook exceeds its timeout — a slow yes is still denied', async () => {
+  it('fails closed when the authorize hook exceeds its timeout — a hung authorize is denied', async () => {
     const { url, close } = await startHttp({
       authorizeTimeoutMs: 20,
-      authorize: () => new Promise<boolean>((r) => setTimeout(() => r(true), 200)),
+      // A never-resolving authorize: the timeout is the ONLY way the call can settle,
+      // so it fires deterministically — no real-timer race with a competing resolution
+      // that a loaded runner could reorder (test-determinism).
+      authorize: () => new Promise<boolean>(() => {}),
     });
     const client = new Client({ name: 'slow-auth', version: '0.0.0' });
     try {
@@ -228,6 +231,22 @@ describe('accelerator HTTP transport — one process, many sessions', () => {
       // Init fails -> 500 wrapper fires, and the reserved slot is released...
       expect((await post(url, initRequest(1))).status).toBe(500);
       // ...so a second init reaches init again (500, not a stuck 503).
+      expect((await post(url, initRequest(2))).status).toBe(500);
+    } finally {
+      await close();
+    }
+  });
+
+  it('returns 500 and reclaims the slot when session init HANGS past initTimeoutMs', async () => {
+    const { url, close } = await startHttp({
+      maxSessions: 1,
+      initTimeoutMs: 20,
+      createServerFn: () => new Promise<never>(() => {}), // factory hangs past the budget
+    });
+    try {
+      // The init deadline fires -> the reserved slot is released and the 500 wrapper hits...
+      expect((await post(url, initRequest(1))).status).toBe(500);
+      // ...so a second init reaches init again (500, not a stuck 503) — the slot was reclaimed.
       expect((await post(url, initRequest(2))).status).toBe(500);
     } finally {
       await close();
