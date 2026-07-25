@@ -12,13 +12,14 @@ capabilities → accelerator, never the reverse.
 - `src/` — the substrate: `router.ts` (backend routing), `cache.ts`, `edit.ts` + `mutate.ts`
   (file mutation), `graph.ts` (code graph) + `architecture.ts` (deterministic
   architecture-conformance checks over the graph), `tiers.ts` / `registry.ts` / `metering.ts` (the
-  LLM binding), `audit.ts` / `otlp.ts` (telemetry), `loop/*` (raw refine/search/eval primitives).
+  LLM binding), `audit.ts` / `otlp.ts` (telemetry), `http.ts` (the streamable-HTTP shared-cache server), `loop/*` (raw refine/search/eval primitives).
 - `src/tools/` — MCP tool registrations: `source.ts` (read/list/tree/grep/find_symbol/
   code_graph/write/edit/multi_edit/insert/delete_block/commit_files/fork/branch/PR), `workflow.ts`
   (board CRUD).
 - `src/index.ts` — `createServer()`; `src/bin.ts` — the stdio server bin (aliased
-  `accelerator` / `verevoir-accelerator`). The other declared bins are `verevoir-card-sync`
-  and `verevoir-audit-trace`.
+  `accelerator` / `verevoir-accelerator`); `src/http-bin.ts` — the streamable-HTTP server bin
+  (`verevoir-accelerator-http`), one process serving many sessions that share the cache. The
+  other declared bins are `verevoir-card-sync` and `verevoir-audit-trace`.
 - Every compiled module is importable by subpath (`@verevoir/accelerator/<name>`); the list
   lives in `llms.txt`. Consumers (capabilities) import these.
 
@@ -26,7 +27,9 @@ capabilities → accelerator, never the reverse.
 
 - `npm run build` (`tsc`) · `npm run typecheck` (`tsc --noEmit`).
 - `npm test` / `npx vitest run` — the suite · `npm run lint` (`prettier --check .`).
-- `npx @verevoir/accelerator` (or `node dist/bin.js`) launches the MCP server over stdio.
+- `npx @verevoir/accelerator` (or `node dist/bin.js`) launches the MCP server over stdio;
+  `node dist/http-bin.js` (`npm run start:http`, honouring `PORT` / `HOST`) launches it over
+  streamable HTTP, so many sessions share one warm cache (one process, not one per client).
 
 ## Credentials
 
