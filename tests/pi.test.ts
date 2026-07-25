@@ -79,6 +79,34 @@ describe('buildPiHost', () => {
     }));
     expect((tools[0].parameters as { type?: string }).type).toBe('object');
   });
+
+  it('throws immediately when the AbortSignal is already aborted, without running the handler', async () => {
+    const { pi, tools } = mockPi();
+    let ran = false;
+    buildPiHost(pi).registerTool('t', { description: 't' }, async () => {
+      ran = true;
+      return { content: [{ type: 'text', text: 'ran' }] };
+    });
+    const ac = new AbortController();
+    ac.abort(new Error('cancelled'));
+    await expect(tools[0].execute('c1', {}, ac.signal)).rejects.toThrow('cancelled');
+    expect(ran).toBe(false);
+  });
+
+  it('rejects promptly when the signal aborts while the handler is still pending', async () => {
+    const { pi, tools } = mockPi();
+    let release!: (r: { content: { type: string; text: string }[] }) => void;
+    buildPiHost(pi).registerTool(
+      't',
+      { description: 't' },
+      () => new Promise((res) => (release = res))
+    );
+    const ac = new AbortController();
+    const call = tools[0].execute('c1', {}, ac.signal);
+    ac.abort(new Error('stop'));
+    await expect(call).rejects.toThrow('stop');
+    release({ content: [{ type: 'text', text: 'late' }] }); // settle the dangling handler
+  });
 });
 
 describe('governNative', () => {

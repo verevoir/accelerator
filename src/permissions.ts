@@ -128,7 +128,7 @@ export const DEFAULT_SCOPE_SPEC = 'read';
 
 /**
  * Parse an `ACCELERATOR_TOOLS` value — a comma-separated list of class names
- * (`read`, `write-local`, `write-github`, `cards-write`) and/or explicit tool
+ * (`read`, `write-local`, `write-github`, `cards-write`, `shell`) and/or explicit tool
  * names — into a {@link Scope}. Unknown entries are ignored with a warning
  * rather than failing. When the value is unset or empty the scope defaults to
  * `read`.

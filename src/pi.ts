@@ -111,6 +111,44 @@ function toParameters(inputSchema: McpToolConfig['inputSchema']): unknown {
   return z.toJSONSchema(z.object(inputSchema));
 }
 
+/** The reason an AbortSignal carries, as an Error to throw. */
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new Error(typeof signal.reason === 'string' ? signal.reason : 'aborted');
+}
+
+/** Throw if the signal is already aborted — so an already-cancelled tool call
+ * never starts the underlying work. */
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw abortReason(signal);
+}
+
+/** Settle a pending handler promise against pi's AbortSignal: if the tool call
+ * is cancelled, reject promptly with the abort reason so the call is bounded
+ * rather than hanging. The MCP handler has no cancellation channel (it takes no
+ * signal), so it may still run to completion in the background — but pi stops
+ * waiting the moment the signal fires. */
+function withAbort<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work;
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(abortReason(signal));
+    signal.addEventListener('abort', onAbort, { once: true });
+    const done = () => signal.removeEventListener('abort', onAbort);
+    work.then(
+      (value) => {
+        done();
+        resolve(value);
+      },
+      (err) => {
+        done();
+        reject(err);
+      }
+    );
+  });
+}
+
 /**
  * A {@link ToolHost} that maps the shared MCP tool registration onto
  * `pi.registerTool` — translating the MCP tool config (description/inputSchema)
@@ -126,8 +164,13 @@ export function buildPiHost(pi: PiExtensionAPI): ToolHost {
       description,
       promptSnippet: truncate(description, PROMPT_SNIPPET_MAX),
       parameters: toParameters(config.inputSchema),
-      execute: async (_toolCallId, params) => {
-        const result = await handler(params ?? {});
+      execute: async (_toolCallId, params, signal) => {
+        // Honour pi's AbortSignal: don't start if already cancelled, and settle
+        // the call promptly if it is cancelled mid-flight (resilience finding).
+        // The MCP handler itself takes no signal, so it can't be interrupted —
+        // but the call is no longer unbounded/uncancellable from pi's side.
+        throwIfAborted(signal);
+        const result = await withAbort(handler(params ?? {}), signal);
         const content = (result.content ?? []).map((c) => ({
           type: 'text' as const,
           text: c.text,
