@@ -59,9 +59,9 @@ function rates(inPerM: number, outPerM: number): ModelRates {
  * model id so a more specific family (e.g. a future "gpt-4o") could be added
  * ahead of the generic "gpt". Figures are approximate list prices, $/M-token. */
 const RATES: Array<{ family: string; rates: ModelRates }> = [
-  { family: 'opus', rates: rates(15, 75) }, // Claude Opus
+  { family: 'opus', rates: rates(5, 25) }, // Claude Opus (aligned to @verevoir/llm catalog; [15,75] was Opus-3 era)
   { family: 'sonnet', rates: rates(3, 15) }, // Claude Sonnet
-  { family: 'haiku', rates: rates(0.8, 4) }, // Claude Haiku
+  { family: 'haiku', rates: rates(1, 5) }, // Claude Haiku (aligned to @verevoir/llm catalog)
   { family: 'deepseek', rates: rates(0.27, 1.1) }, // DeepSeek V3 family
   { family: 'gemini', rates: rates(1.25, 5) }, // Google Gemini Pro tier
   { family: 'gpt', rates: rates(2.5, 10) }, // OpenAI GPT-4o tier
