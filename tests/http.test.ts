@@ -258,13 +258,22 @@ describe('accelerator HTTP transport — one process, many sessions', () => {
     const controller = new AbortController();
     try {
       const sid = (await post(url, initRequest(1))).headers.get('mcp-session-id') ?? '';
-      // Hold an SSE GET open so a request is in flight for that session.
-      await fetch(url, {
+      // Open an SSE GET and keep it open ACROSS the reap. The handler marks the
+      // request in flight before it writes the response head and only clears that
+      // mark when handleRequest resolves (the stream closing), so a received 200
+      // proves the request is live server-side, and holding a read pending on the
+      // body keeps the stream open at the moment reapIdle runs. The assertion is
+      // therefore deterministic — it pins in-flight protection, not a timing race.
+      const res = await fetch(url, {
         method: 'GET',
         headers: { 'mcp-session-id': sid, accept: 'text/event-stream' },
         signal: controller.signal,
       });
+      expect(res.status).toBe(200); // the SSE stream actually opened
+      const held = res.body?.getReader().read(); // stays pending while the stream is open
       expect(reapIdle(0)).toBe(0); // in flight -> protected despite idleMs 0
+      controller.abort();
+      await held?.catch(() => undefined); // the abort settles the held-open read
     } finally {
       controller.abort();
       await close();
