@@ -7,13 +7,12 @@ import installAcceleratorPlugin, {
   type PiToolCallEvent,
   type PiToolCallEventResult,
   type PiToolDefinition,
-  type PiExtensionContext,
 } from '../src/pi.js';
 import { TOOL_CLASSES } from '../src/permissions.js';
 
 type ToolCallHandler = (
   event: PiToolCallEvent,
-  ctx: PiExtensionContext
+  ctx?: unknown
 ) => PiToolCallEventResult | void | Promise<PiToolCallEventResult | void>;
 
 /** A mock pi ExtensionAPI that records registered tools and the tool_call
@@ -150,7 +149,7 @@ describe('installAcceleratorPlugin', () => {
 
     const handler = getHandler();
     expect(handler).toBeDefined();
-    const ctx: PiExtensionContext = { hasUI: false };
+    const ctx = {};
     expect(
       await handler!({ type: 'tool_call', toolCallId: '1', toolName: 'bash', input: {} }, ctx)
     ).toMatchObject({
@@ -178,7 +177,7 @@ describe('installAcceleratorPlugin', () => {
     installAcceleratorPlugin(pi);
 
     const handler = getHandler();
-    const ctx: PiExtensionContext = { hasUI: false };
+    const ctx = {};
     // write_file is not in the read scope — never registered, and blocked here too.
     expect(
       await handler!({ type: 'tool_call', toolCallId: '1', toolName: 'write_file', input: {} }, ctx)

@@ -15,6 +15,7 @@ ARCHITECTURE
     write-local = filesystem mutations (write_file, edit_file, multi_edit, insert, delete_block)
     write-github= git/GitHub mutations (commit_files, ensure_fork, ensure_branch, open_pull_request)
     cards-write = board mutations (create_card, update_card, move_card, add_comment)
+    shell       = pi's native bash only (explicit grant; write-local never implies a shell) [added in review]
   Scope is declared via env ACCELERATOR_TOOLS (comma-separated class names and/or explicit tool names). Default when unset: read.
   Registration-time gating: a withScope(host, scope) ToolHost decorator that only forwards registerTool for in-scope tools; out-of-scope tools are never registered (fail-closed).
 - pi entry (new, src/pi.ts): a default-exported function (pi) => { ... } that (a) builds a piHost:ToolHost whose registerTool maps to pi.registerTool (translating the tool config/inputSchema as pi expects), (b) wraps it withScope(piHost, scopeFromEnv()) and calls registerSourceTools + registerWorkflowTools on it (reusing the tool defs unchanged), and (c) installs a native-tool gate: pi.on(tool_call, handler) applying the SAME scope policy to pi native tools (bash/read/write/edit), returning { block: true, reason } for out-of-scope/destructive calls. Native gating controlled by env ACCELERATOR_GOVERN_NATIVE (default off); when on and there is no UI, fail closed.

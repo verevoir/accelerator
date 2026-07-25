@@ -15,18 +15,20 @@ export interface ToolHost {
 
 /**
  * A tool's privilege class — the unit a scope grants. `read` is exactly the
- * `readOnlyHint: true` tools; the three write classes split the mutations by
- * BLAST RADIUS (local files vs git/GitHub vs work-tracker board), a distinction
- * the MCP annotations alone cannot express, so a scope can grant local edits
- * without granting GitHub or board writes.
+ * `readOnlyHint: true` tools; the write classes split the mutations by BLAST
+ * RADIUS (local files vs git/GitHub vs work-tracker board), a distinction the
+ * MCP annotations alone cannot express, so a scope can grant local edits
+ * without granting GitHub or board writes. `shell` stands apart for pi's
+ * unbounded native `bash` — an explicit grant, never implied by a write class.
  */
-export type ToolClass = 'read' | 'write-local' | 'write-github' | 'cards-write';
+export type ToolClass = 'read' | 'write-local' | 'write-github' | 'cards-write' | 'shell';
 
 export const TOOL_CLASS_NAMES: readonly ToolClass[] = [
   'read',
   'write-local',
   'write-github',
   'cards-write',
+  'shell',
 ];
 
 /**
@@ -67,19 +69,16 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
 
 /**
  * pi's built-in tools, mapped to the same privilege classes so the native gate
- * applies ONE policy across accelerator tools and pi's own read/grep/find/ls
- * and write/edit/bash. `bash` is unbounded (it can push to GitHub or delete
- * files), so it is gated behind `write-local` at minimum and — like every
- * mutating native tool — is blocked under a read-only scope.
+ * applies ONE policy across accelerator tools and pi's own read/grep/find/ls,
+ * write/edit, and bash. Reads — plus pi's in-session `todo`, which has no
+ * external blast radius — sit under `read`; file mutations under `write-local`.
  *
- * CAVEAT — `write-local` grants a shell that subsumes the other write classes.
- * Because `bash` is here under `write-local`, granting `write-local` for local
- * edits also grants an unbounded shell that can `git push` or write to the
- * board — i.e. it effectively subsumes `write-github` and `cards-write`. The
- * class split therefore constrains the accelerator's OWN tools by blast radius,
- * but NOT native `bash`: withhold `write-local` (or native governance, or
- * pi's `bash`) if that shell must not exist. A dedicated `shell` class that
- * separates `bash` from local file edits is left as a deliberate follow-up.
+ * `bash` is unbounded: it can `git push`, hit the network, `rm -rf`, or write
+ * to the board. So it is NOT lumped in with local file edits — it has its own
+ * `shell` class and needs an explicit `shell` grant. `write-local` therefore
+ * grants local edits WITHOUT handing over a shell that would subsume
+ * `write-github` and `cards-write`; withhold `shell` (the default) and native
+ * `bash` is blocked.
  *
  * This is a POLICY layer, not a sandbox: the real isolation boundary is running
  * pi in a container.
@@ -89,9 +88,10 @@ export const NATIVE_TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   grep: 'read',
   find: 'read',
   ls: 'read',
+  todo: 'read',
   write: 'write-local',
   edit: 'write-local',
-  bash: 'write-local',
+  bash: 'shell',
 };
 
 export function toolClass(name: string): ToolClass | undefined {

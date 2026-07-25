@@ -70,17 +70,13 @@ export interface PiToolCallEventResult {
   reason?: string;
 }
 
-export interface PiExtensionContext {
-  hasUI: boolean;
-}
-
 export interface PiExtensionAPI {
   registerTool(tool: PiToolDefinition): void;
   on(
     event: 'tool_call',
     handler: (
       event: PiToolCallEvent,
-      ctx: PiExtensionContext
+      ctx?: unknown
     ) => PiToolCallEventResult | void | Promise<PiToolCallEventResult | void>
   ): void;
 }
@@ -166,7 +162,16 @@ export function governNative(env: NodeJS.ProcessEnv = process.env): boolean {
  * Registration-gated accelerator tools are already absent, so this exists to
  * govern pi's OWN read/grep/find/ls/write/edit/bash. */
 export function installNativeGate(pi: PiExtensionAPI, scope: Scope): void {
-  pi.on('tool_call', (event) => gateNativeToolCall(event.toolName, scope));
+  pi.on('tool_call', (event) => {
+    const decision = gateNativeToolCall(event.toolName, scope);
+    if (decision) {
+      // Audit every block so a denied native call is visible, not silent.
+      process.stderr.write(
+        `@verevoir/accelerator: blocked native "${event.toolName}" — ${decision.reason}\n`
+      );
+    }
+    return decision;
+  });
 }
 
 /**

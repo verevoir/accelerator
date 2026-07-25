@@ -39,7 +39,7 @@ no MCP server process required.
 
 Because pi runs tools in-process, the plugin ships an **annotation-driven
 least-privilege scope layer** so a client can run pi with only the tool classes
-they intend to grant. Tools are grouped into four classes:
+they intend to grant. Tools are grouped into five classes:
 
 | Class          | Tools                                                               |
 | -------------- | ------------------------------------------------------------------- |
@@ -47,6 +47,7 @@ they intend to grant. Tools are grouped into four classes:
 | `write-local`  | `write_file`, `edit_file`, `multi_edit`, `insert`, `delete_block`   |
 | `write-github` | `commit_files`, `ensure_fork`, `ensure_branch`, `open_pull_request` |
 | `cards-write`  | `create_card`, `update_card`, `move_card`, `add_comment`            |
+| `shell`        | no accelerator tools — gates only pi's native `bash` (see below)    |
 
 Two environment knobs control the scope:
 
@@ -61,24 +62,26 @@ Examples:
 # read-only (the default) — no writes register at all
 pi ...
 
-# allow local edits and board writes, and govern pi's native bash/write too
+# allow local edits and board writes, and govern pi's native tools too
+# (native bash stays blocked — it needs an explicit `shell` grant)
 ACCELERATOR_TOOLS='read,write-local,cards-write' ACCELERATOR_GOVERN_NATIVE=1 pi ...
+
+# add `shell` only when pi's native bash is genuinely required
+ACCELERATOR_TOOLS='read,write-local,shell' ACCELERATOR_GOVERN_NATIVE=1 pi ...
 
 # a single explicit tool
 ACCELERATOR_TOOLS='read_file,open_pull_request' pi ...
 ```
 
 **Honest framing:** this is a **policy + least-privilege + audit layer, not a
-sandbox.** It fails closed and keeps out-of-scope tools unregistered, but pi's
-`bash` remains unbounded once granted. Note that under `ACCELERATOR_GOVERN_NATIVE`
-native `bash` is classed as `write-local`, so granting `write-local` also grants
-an **unbounded shell** that can `git push` or write to the board — it effectively
-subsumes `write-github` and `cards-write`. The class split constrains the
-accelerator's own tools by blast radius, not native `bash`; withhold
-`write-local` (or native governance, or pi's `bash`) if that shell must not
-exist. The real isolation boundary is **running
-pi in a container** — the scope layer narrows what the agent is handed; the
-container is what contains it. See
+sandbox.** It fails closed and keeps out-of-scope tools unregistered. pi's native
+`bash` is unbounded — it can `git push`, hit the network, `rm -rf`, or write to
+the board — so it has its **own `shell` class** and is permitted only when `shell`
+is explicitly granted (with `ACCELERATOR_GOVERN_NATIVE` on). Granting
+`write-local` therefore does **not** hand over a shell; `shell` must be asked for
+by name. Even then `bash` is unbounded once granted — the real isolation boundary
+is **running pi in a container**: the scope layer narrows what the agent is
+handed; the container is what contains it. See
 [`docs/2026-07-24-pi-plugin-and-permissions.md`](docs/2026-07-24-pi-plugin-and-permissions.md).
 
 ## Secrets / environment — and _why_ each

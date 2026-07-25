@@ -161,11 +161,25 @@ describe('gateNativeToolCall', () => {
     expect(gateNativeToolCall('edit', read)?.reason).toContain('write-local');
   });
 
-  it('allows native write and bash once write-local is granted', () => {
+  it('allows native write once write-local is granted, but NOT bash', () => {
     expect(gateNativeToolCall('write', local)).toBeUndefined();
-    expect(gateNativeToolCall('bash', local)).toBeUndefined();
+    expect(gateNativeToolCall('edit', local)).toBeUndefined();
+    // bash has its own `shell` class — write-local must not hand over a shell
+    // that would subsume write-github / cards-write.
+    expect(gateNativeToolCall('bash', local)).toMatchObject({ block: true });
     // A read under write-local is still blocked — the scope grants only write-local.
     expect(gateNativeToolCall('read', local)).toMatchObject({ block: true });
+  });
+
+  it('gates native bash behind an explicit shell grant', () => {
+    const shell = resolveScope('shell');
+    expect(gateNativeToolCall('bash', shell)).toBeUndefined();
+    // shell alone does not grant local file writes.
+    expect(gateNativeToolCall('write', shell)).toMatchObject({ block: true });
+  });
+
+  it('treats pi in-session todo as benign (allowed under read)', () => {
+    expect(gateNativeToolCall('todo', read)).toBeUndefined();
   });
 
   it('blocks an unclassified native tool (fail-closed)', () => {

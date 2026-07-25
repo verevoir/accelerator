@@ -59,7 +59,7 @@ When something is wrong, or a change needs to land in many places, ask whether y
 
 The same tools can be loaded as a **pi plugin** instead of an MCP server (via the `pi.extensions` entry in `package.json`). Under pi the toolbelt is gated by an annotation-driven least-privilege scope, controlled by two env knobs:
 
-- **`ACCELERATOR_TOOLS`** — comma-separated tool **classes** (`read`, `write-local`, `write-github`, `cards-write`) and/or explicit tool names that may register. Default when unset: `read`. Out-of-scope tools are never registered (fail-closed); unknown entries are ignored with a warning.
+- **`ACCELERATOR_TOOLS`** — comma-separated tool **classes** (`read`, `write-local`, `write-github`, `cards-write`, `shell`) and/or explicit tool names that may register. Default when unset: `read`. Out-of-scope tools are never registered (fail-closed); unknown entries are ignored with a warning. `shell` grants only pi's native `bash`.
 - **`ACCELERATOR_GOVERN_NATIVE`** — when truthy, applies the same scope policy to pi's own native tools (`read`/`grep`/`find`/`ls`/`write`/`edit`/`bash`) via a `tool_call` gate that blocks out-of-scope calls. Default off.
 
-This is a **policy + least-privilege + audit layer, not a sandbox**: it narrows what the agent is handed and fails closed, but `bash` is unbounded once granted — the real isolation boundary is running pi in a **container**.
+This is a **policy + least-privilege + audit layer, not a sandbox**: it narrows what the agent is handed and fails closed. pi's native `bash` sits in its own `shell` class (so granting `write-local` does not hand over a shell), but once `shell` is granted `bash` is unbounded — the real isolation boundary is running pi in a **container**.
