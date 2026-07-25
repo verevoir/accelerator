@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolHost } from '../permissions.js';
 import type { CardCreate, CardPatch } from '@verevoir/workflows';
 import { pickWorkflowAdapter, resolveWorkflowEnv } from '../router.js';
 import { jsonText } from '../result.js';
@@ -15,7 +15,7 @@ export function definedOnly<T extends object>(obj: T): Partial<T> {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as Partial<T>;
 }
 
-export function registerWorkflowTools(server: McpServer): void {
+export function registerWorkflowTools(server: ToolHost): void {
   // -------------------------------------------------------------------------
   // list_columns
   // -------------------------------------------------------------------------

@@ -16,6 +16,13 @@ capabilities → accelerator, never the reverse.
 - `src/tools/` — MCP tool registrations: `source.ts` (read/list/tree/grep/find_symbol/
   code_graph/write/edit/multi_edit/insert/delete_block/commit_files/fork/branch/PR), `workflow.ts`
   (board CRUD).
+- `src/pi.ts` + `src/permissions.ts` — the **pi-coding-agent plugin** entry and its
+  annotation-driven permissions scope. `package.json`'s `pi.extensions` points at `dist/pi.js`;
+  the same tool definitions serve both the MCP server and pi via the `ToolHost` seam.
+  `ACCELERATOR_TOOLS` picks the granted classes (`read` / `write-local` / `write-github` /
+  `cards-write` / `shell`, default `read`, fail-closed); `ACCELERATOR_GOVERN_NATIVE` extends the
+  same policy over pi's native tools. A policy/least-privilege layer, not a sandbox — see
+  `docs/2026-07-24-pi-plugin-and-permissions.md`.
 - `src/index.ts` — `createServer()`; `src/bin.ts` — the stdio server bin (aliased
   `accelerator` / `verevoir-accelerator`); `src/http-bin.ts` — the streamable-HTTP server bin
   (`verevoir-accelerator-http`), one process serving many sessions that share the cache. The

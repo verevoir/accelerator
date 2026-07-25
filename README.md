@@ -29,6 +29,61 @@ a model key).
 The `github:` form is what `@verevoir/capabilities` uses as a dependency, so the
 private moat never needs a registry.
 
+## Use as a pi plugin (with a permissions scope)
+
+The same codebase is also a **[pi](https://github.com/earendil-works/pi-coding-agent)
+plugin**. `package.json` declares a `pi.extensions` entry pointing at the built
+`dist/pi.js`, so installing this package as a pi package registers the same
+source and work-tracker tools onto pi — reusing the identical tool definitions,
+no MCP server process required.
+
+Because pi runs tools in-process, the plugin ships an **annotation-driven
+least-privilege scope layer** so a client can run pi with only the tool classes
+they intend to grant. Tools are grouped into five classes:
+
+| Class          | Tools                                                               |
+| -------------- | ------------------------------------------------------------------- |
+| `read`         | every `readOnlyHint` tool — the reads and board queries             |
+| `write-local`  | `write_file`, `edit_file`, `multi_edit`, `insert`, `delete_block`   |
+| `write-github` | `commit_files`, `ensure_fork`, `ensure_branch`, `open_pull_request` |
+| `cards-write`  | `create_card`, `update_card`, `move_card`, `add_comment`            |
+| `shell`        | no accelerator tools — gates only pi's native `bash` (see below)    |
+
+Two environment knobs control the scope:
+
+| Env var                     | Effect                                                                                                                                                                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ACCELERATOR_TOOLS`         | Comma-separated **class names and/or explicit tool names** that may register. Default when unset: `read`. Out-of-scope tools are never registered (fail-closed). An explicit tool name grants just that tool; unknown entries are ignored with a warning on stderr. |
+| `ACCELERATOR_GOVERN_NATIVE` | When truthy (`1`/`true`/`on`/`yes`), install a `tool_call` gate that applies the **same** scope policy to pi's own native tools (`read`/`grep`/`find`/`ls`/`write`/`edit`/`bash`), blocking out-of-scope calls with a reason. Default **off**.                      |
+
+Examples:
+
+```bash
+# read-only (the default) — no writes register at all
+pi ...
+
+# allow local edits and board writes, and govern pi's native tools too
+# (native bash stays blocked — it needs an explicit `shell` grant)
+ACCELERATOR_TOOLS='read,write-local,cards-write' ACCELERATOR_GOVERN_NATIVE=1 pi ...
+
+# add `shell` only when pi's native bash is genuinely required
+ACCELERATOR_TOOLS='read,write-local,shell' ACCELERATOR_GOVERN_NATIVE=1 pi ...
+
+# a single explicit tool
+ACCELERATOR_TOOLS='read_file,open_pull_request' pi ...
+```
+
+**Honest framing:** this is a **policy + least-privilege + audit layer, not a
+sandbox.** It fails closed and keeps out-of-scope tools unregistered. pi's native
+`bash` is unbounded — it can `git push`, hit the network, `rm -rf`, or write to
+the board — so it has its **own `shell` class** and is permitted only when `shell`
+is explicitly granted (with `ACCELERATOR_GOVERN_NATIVE` on). Granting
+`write-local` therefore does **not** hand over a shell; `shell` must be asked for
+by name. Even then `bash` is unbounded once granted — the real isolation boundary
+is **running pi in a container**: the scope layer narrows what the agent is
+handed; the container is what contains it. See
+[`docs/2026-07-24-pi-plugin-and-permissions.md`](docs/2026-07-24-pi-plugin-and-permissions.md).
+
 ## Secrets / environment — and _why_ each
 
 `accelerator` only exposes **source** and **work-tracker** tools, so it only ever

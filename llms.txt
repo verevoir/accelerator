@@ -51,6 +51,27 @@ order and stops once maxResults matches are settled, warming only the files it
 reads — a small query no longer touches every file; the hits are identical to a
 whole-source warm + search. An optional prefix scopes grep/warm to one subtree.
 
+## Use as a pi plugin (permissions scope)
+
+The same tool definitions also load as a pi (pi-coding-agent) plugin: package.json declares a
+pi.extensions entry pointing at dist/pi.js, so installing accelerator as a pi package registers
+the identical source + board tools onto pi — no MCP server process.
+
+Because pi runs tools in-process, the plugin ships an annotation-driven least-privilege scope.
+Five classes: read (every readOnlyHint tool), write-local (write_file, edit_file, multi_edit,
+insert, delete_block), write-github (commit_files, ensure_fork, ensure_branch,
+open_pull_request), cards-write (create_card, update_card, move_card, add_comment), and shell
+(no accelerator tool — gates only pi's native bash). Two env knobs:
+- ACCELERATOR_TOOLS — comma-separated class names and/or explicit tool names that may register.
+  Default when unset: read. Out-of-scope tools are never registered (fail-closed); unknown
+  entries warn on stderr.
+- ACCELERATOR_GOVERN_NATIVE — when truthy (1/true/on/yes), a tool_call gate applies the SAME
+  scope to pi's own native tools (read/grep/find/ls/write/edit/bash), blocking out-of-scope
+  calls with a reason. Default off.
+Native bash sits in its own shell class (never implied by write-local); grant it explicitly.
+This is a policy + least-privilege + audit layer, NOT a sandbox — the real isolation boundary
+is running pi in a container. See docs/2026-07-24-pi-plugin-and-permissions.md.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath: @verevoir/accelerator/tiers,

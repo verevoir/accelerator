@@ -4,3 +4,8 @@
 # fixtures stay formatted and checked.
 tests/fixtures/non-json-dir/aigency.json
 tests/fixtures/empty-dir/.gitkeep
+
+# Committed verbatim (the design/build spec as briefed). Prettier would reflow
+# its indented tool-class list and heading spacing, so it is scoped out to keep
+# the record byte-faithful to the brief.
+docs/2026-07-24-pi-plugin-and-permissions.md
