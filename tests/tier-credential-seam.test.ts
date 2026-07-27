@@ -1,8 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tierChat } from '../src/tiers.js';
 import { warmRegistry } from '../src/registry.js';
+
+// Anchor every filesystem read to THIS FILE, never to the working directory. A
+// cwd-relative read throws ENOENT from inside the test callback when the runner is
+// invoked from anywhere but the project root — and an exception is not an assertion
+// failure, so it propagates past the diagnostic messages below entirely. The test
+// then reports an infrastructure error in exactly the situation those messages were
+// written to explain. Same reason `workflow-shape.test.ts` resolves its YAML this way.
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // The seam that actually matters. Every governed path that needs a model —
 // the antagonist reviewer, enact's overseer, delegate/dispatch's verify —
@@ -31,7 +40,7 @@ describe('install integrity — checked before anything reads a resolved model',
     // on disk, which has no `altKeyEnvs`, so CLAUDE_CODE_OAUTH_TOKEN is not counted
     // as a credential and every tier below resolves null — with nothing naming the
     // cause. CI never sees it (`npm ci` installs the lockfile); a working tree does.
-    const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+    const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8'));
     // lockfileVersion 2/3 key it under `packages`, v1 under `dependencies`. Read
     // both: assuming v2+ makes `locked` undefined against a v1 lockfile, and the
     // assertion then reports "the lockfile pins undefined — run `npm ci`", sending
@@ -48,7 +57,7 @@ describe('install integrity — checked before anything reads a resolved model',
     ).toBeTypeOf('string');
 
     const installed = JSON.parse(
-      readFileSync(join('node_modules', '@verevoir', 'llm', 'package.json'), 'utf8')
+      readFileSync(join(ROOT, 'node_modules', '@verevoir', 'llm', 'package.json'), 'utf8')
     ).version;
     expect(
       installed,
@@ -146,7 +155,7 @@ describe('dependency hygiene — exactly one @verevoir/llm in the tree', () => {
         }
       }
     };
-    walk('node_modules');
+    walk(join(ROOT, 'node_modules'));
     expect(found.length, `expected one @verevoir/llm, found ${found.join(', ')}`).toBe(1);
   });
 });
