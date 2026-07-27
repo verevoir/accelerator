@@ -209,7 +209,6 @@ jobs:
           chmod -R a-w "$HEAD_ROOT" 2>/dev/null || true
           echo "HEAD_ROOT=$HEAD_ROOT" >> "$GITHUB_ENV"
 
-
       # `event.pull_request.base.sha` is FROZEN at PR-open: once the author merges main
       # into the branch, diffing from it makes all merged-main content look like the
       # PR's own change (a misattribution the frozen sha causes). Diff instead
