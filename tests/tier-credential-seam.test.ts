@@ -69,6 +69,26 @@ describe('tierChat — the credential seam the governed paths resolve through', 
 });
 
 describe('dependency hygiene — exactly one @verevoir/llm in the tree', () => {
+  it('has the installed @verevoir/llm the lockfile pins, not a stale one', () => {
+    // Runs first so a stale working tree is diagnosed HERE rather than as a
+    // mystifying `expected null not to be null` from the OAuth case above. That is
+    // the actual symptom: an install predating the ^0.21.1 bump leaves 0.20.x on
+    // disk, which has no `altKeyEnvs`, so OAuth is not seen as a credential and the
+    // tier resolves null — with nothing in the failure naming the cause.
+    const locked = JSON.parse(readFileSync('package-lock.json', 'utf8')).packages?.[
+      'node_modules/@verevoir/llm'
+    ]?.version;
+    const installed = JSON.parse(
+      readFileSync(join('node_modules', '@verevoir', 'llm', 'package.json'), 'utf8')
+    ).version;
+    expect(
+      installed,
+      `@verevoir/llm on disk is ${installed} but the lockfile pins ${locked} — run \`npm ci\`. ` +
+        `A pre-0.21 copy has no altKeyEnvs, so CLAUDE_CODE_OAUTH_TOKEN does not count as ` +
+        `a credential and every tier assertion below fails for that reason alone.`
+    ).toBe(locked);
+  });
+
   it('has no nested duplicate that could shadow the resolved version', () => {
     // A second copy is how a correct top-level dependency stops being the one
     // the code actually runs. Walk node_modules for every @verevoir/llm.
