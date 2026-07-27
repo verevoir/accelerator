@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tierChat } from '../src/tiers.js';
+import { warmRegistry } from '../src/registry.js';
 
 // The seam that actually matters. Every governed path that needs a model —
 // the antagonist reviewer, enact's overseer, delegate/dispatch's verify —
@@ -23,7 +24,14 @@ const TIER = 'AIGENCY_MODEL_REASONING';
 describe('tierChat — the credential seam the governed paths resolve through', () => {
   const saved = { key: process.env[KEY], oauth: process.env[OAUTH], tier: process.env[TIER] };
 
-  beforeEach(() => {
+  // Warm BEFORE each case. `warmRegistry` latches after its first run, so a
+  // test that ran before any warm would see an EMPTY provider registry and get
+  // null from tierChat regardless of credentials — passing the "resolves
+  // nothing" case for entirely the wrong reason, and only when it happened to
+  // run first. Warming up front makes every assertion about the CREDENTIAL
+  // check, and makes the suite order-independent.
+  beforeEach(async () => {
+    await warmRegistry();
     delete process.env[KEY];
     delete process.env[OAUTH];
     delete process.env[TIER];
@@ -50,6 +58,9 @@ describe('tierChat — the credential seam the governed paths resolve through', 
     process.env[KEY] = 'sk-ant-seam-test';
     const tier = await tierChat('reasoning');
     expect(tier).not.toBeNull();
+    // Same strength as the OAuth case: a non-null tier of the WRONG class would
+    // still be a defect, so assert what actually resolved.
+    expect(tier?.modelId).toMatch(/opus/);
   });
 
   it('resolves nothing when neither credential is present — fail closed, not a silent default', async () => {
