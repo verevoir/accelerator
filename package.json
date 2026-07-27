@@ -1,6 +1,6 @@
 {
   "name": "@verevoir/accelerator",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "The aigency accelerator: commodity dev tools (cached source reads/writes via @verevoir/context, work-tracker ops via @verevoir/workflows) as an MCP server, plus the substrate + LLM/telemetry/loop primitives exposed as library subpath exports for @verevoir/capabilities to compose on.",
   "license": "Apache-2.0",
   "type": "module",
@@ -52,7 +52,7 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@notionhq/client": "^5.22.0",
     "@verevoir/context": "^0.14.0",
-    "@verevoir/llm": "^0.20.0",
+    "@verevoir/llm": "^0.21.1",
     "@verevoir/sources": "^0.7.0",
     "@verevoir/workflows": "^0.6.0",
     "openai": "^6.43.0",
