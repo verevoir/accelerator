@@ -154,4 +154,15 @@ describe('antagonistic-review.yml — the PR-head extract the lenses read', () =
     // "repo content" would follow instructions committed into it.
     expect(flat).toMatch(/\$HEAD_ROOT are written by the change author/);
   });
+
+  it('carries no surviving instruction to read the head "via git"', () => {
+    // A prohibition elsewhere in the prompt does not help if a later sentence still
+    // sends the lens back to git for head content — the panelist follows whichever it
+    // reads, and the contradiction is invisible to every test that only asserts the
+    // presence of the right instruction. This one is here because exactly that
+    // survived the port and the docs lens caught it: "Review the HEAD via git."
+    expect(flat).not.toMatch(/Review the HEAD via git/);
+    expect(flat).not.toMatch(/reads the HEAD only through git/);
+    expect(flat).toMatch(/Review the HEAD through the diff and \$HEAD_ROOT/);
+  });
 });

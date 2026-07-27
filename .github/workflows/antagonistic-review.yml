@@ -281,8 +281,9 @@ jobs:
           # the MCP (mcp.json) reads the corpus with this ephemeral, scoped token.
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           # the change under review, as commit shas — the working tree is BASE, so the
-          # reviewer reads the HEAD only through git (never a checked-out, executable
-          # tree). BASE_SHA is the resolved MERGE-BASE (not the frozen event base sha),
+          # reviewer reads the HEAD only as data — the diff, plus the read-only
+          # $HEAD_ROOT extract (never a checked-out, executable tree).
+          # BASE_SHA is the resolved MERGE-BASE (not the frozen event base sha),
           # so merged-main content is never misattributed to the PR.
           BASE_SHA: ${{ env.MERGE_BASE }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -391,7 +392,8 @@ jobs:
                diff, and read any changed file's full POST-CHANGE content from `$HEAD_ROOT/<path>` (a read-only extract of the PR head). NEVER use `git show HEAD:<path>` or the working tree — both are the BASE. The
                working tree is the gate's own config, checked out at the base branch; the BASE_SHA
                env var carries the MERGE-BASE of the PR against the live base ref (not the working
-               tree's commit), so the diff covers only the PR's own divergence. Review the HEAD via git.
+               tree's commit), so the diff covers only the PR's own divergence. Review the HEAD through the diff
+               and $HEAD_ROOT.
                You are judging the POST-CHANGE state at HEAD. Content shown as REMOVED (a `-` line) is
                gone from the result: do not describe it as still present, and do not cite a claim the
                change has already deleted as a live defect. Removing it may be exactly what the change
