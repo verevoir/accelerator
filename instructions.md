@@ -5,9 +5,11 @@ Verevoir is the front door for reading and writing files, code, and project cont
 - **Writes — always through the MCP.** Make every change to a covered `sourceUrl` / `boardUrl` with `write_file` / `edit_file` (or the card tools). A write that goes around them — shell redirection, `sed -i`, or the built-in Edit/Write on a covered path — leaves the shared cache stale and _wrong_ for the rest of the session, so later reads and searches serve pre-write content. This is the firm rule: never edit a covered file out-of-band.
 - **Reads — prefer the MCP.** Use `read_file` / `grep` / `find_symbol` over the built-in Read / `cat` / shell `grep` / `find` / `ls`. A bypassed read is less costly than a bypassed write — it only misses the cache + index benefit (slower, duplicate fetches, no Notion) rather than corrupting state — but the MCP is still the default whenever a `sourceUrl` fits.
 
-## Before you change code, consult the bar
+## Before you change code — or decide how to split it — consult the bar
 
 Before you implement, write, or change code, call **`provision`** with a short description of the work. Treat this as a precondition for the change, the same way writing through the MCP is: skip it and your code is judged against standards you never read.
+
+**And before you DECOMPOSE — planning the units of work, drawing the boundaries between them, deciding what is one change and what is several — call it then too, because that is a decision the bar governs and it is made before any code exists.** Practices about how work is shaped (how a change is split, how much can be reviewed at once, how to plan for width) are unreachable if the only trigger is "about to write code": by the time it fires, the decomposition is already fixed and the rule arrives too late to be followed. A plan that breaches the bar costs a rebuild of the plan, not an edit.
 
 It returns, in one call as text, the **foundational floor practices in full** plus a **menu of the concern practices** (each a one-line summary). You see the whole task, so you narrow better than any isolated classifier: **pick the concerns that apply and call `provision` again with `concerns: ['id', …]`** to pull their full text alongside the floor — a complete frame you can also hand to a worker. (`find_governance` is still there for browsing the wider record; `provision` is the triggered shortcut for "what am I held to for _this_.")
 
