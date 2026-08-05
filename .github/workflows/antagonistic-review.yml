@@ -15,10 +15,21 @@
 # its PRIVATE repo (see mcp.json). Credentials: a GitHub App (VEREVOIR_APP_ID /
 # VEREVOIR_APP_PRIVATE_KEY) mints a per-run, least-privilege installation token
 # (Contents:read, scoped to capabilities + aigency-guardrails) — NO standing PAT
-# (no-standing-auth-bypass). It both clones that private repo and reads the corpus.
-# That clone authenticates with the token as a repo-local http.extraheader (init ->
+# (no-standing-auth-bypass). It authenticates two clones: the reviewer package, and
+# the guardrails corpus.
+#
+# The corpus is CLONED, not read through the contents API. Fifteen practice bodies
+# per lens, five lenses per PR, every PR in the fleet, all against one App
+# installation's single 5000/hr budget — enough that an eleven-repo rollout
+# exhausted it and failed the fleet closed (STDIO-663). A clone costs none of that
+# budget, and a corpus already on disk cannot fail to fetch mid-review.
+#
+# Both clones authenticate with the token as a repo-local http.extraheader (init ->
 # local config -> fetch, the actions/checkout pattern) — never in the clone URL, argv,
-# or a job-global config, and torn down with the clone dir (STDIO-551).
+# or a job-global config (STDIO-551). The reviewer clone's header lives as long as
+# its directory; the corpus clone's is REMOVED as soon as its fetch is done, because
+# that directory is deliberately kept for the review step to read, and a lens with
+# Bash has no business finding a usable credential in it.
 #
 # Tamper model: runs on `pull_request_target`, so GitHub evaluates the workflow AND all
 # gate config (this file, the prompt, `mcp.json`, `aggregate.sh`) from the BASE branch —
@@ -127,7 +138,7 @@ jobs:
       # token (Contents:read, scoped to just the repos the gate reads) — no standing
       # PAT. The step fails the job if the App creds are absent, so a missing
       # credential is fail-closed by construction.
-      - name: Mint an ephemeral GitHub App token (reviewer-MCP clone + corpus read)
+      - name: Mint an ephemeral GitHub App token (both clones: reviewer MCP + corpus)
         id: app-token
         timeout-minutes: 5
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2

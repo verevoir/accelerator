@@ -179,6 +179,21 @@ describe('antagonistic-review.yml — the guardrails corpus checkout', () => {
     expect(flat).not.toMatch(/run: bash \.?\/?scripts\/checkout-corpus\.sh/);
   });
 
+  it('runs BEFORE the review step, which is the only ordering that works', () => {
+    // The reviewer reads AIGENCY_GUARDRAILS_URL at start-up. A corpus that arrives
+    // after it has begun is a corpus it never sees — and the failure is a lens that
+    // provisions nothing and auto-REJECTs, which reads as a verdict on the change.
+    const corpusAt = yml.indexOf('name: Check out the guardrails corpus');
+    const reviewAt = yml.indexOf('name: Adversarial review against the provisioned practices');
+    const mcpAt = yml.indexOf('name: Pre-build the reviewer MCP');
+    expect(corpusAt).toBeGreaterThan(-1);
+    expect(reviewAt).toBeGreaterThan(-1);
+    expect(mcpAt).toBeGreaterThan(-1);
+    // And after the MCP pre-build, because the script it runs lives in that clone.
+    expect(corpusAt).toBeGreaterThan(mcpAt);
+    expect(corpusAt).toBeLessThan(reviewAt);
+  });
+
   it('passes the credential by environment, never in a URL or on argv', () => {
     expect(flat).toMatch(/CORPUS_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
     expect(flat).not.toMatch(/x-access-token:\$\{\{/);
