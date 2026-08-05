@@ -138,7 +138,7 @@ jobs:
       # token (Contents:read, scoped to just the repos the gate reads) — no standing
       # PAT. The step fails the job if the App creds are absent, so a missing
       # credential is fail-closed by construction.
-      - name: Mint an ephemeral GitHub App token (both clones: reviewer MCP + corpus)
+      - name: Mint an ephemeral GitHub App token (for both clones — reviewer MCP, corpus)
         id: app-token
         timeout-minutes: 5
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
