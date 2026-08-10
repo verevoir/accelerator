@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -70,7 +70,10 @@ async function repoFixture() {
 async function resolve(
   work: string,
   env: Partial<
-    Record<'BASE_REF' | 'BASE_SHA' | 'HEAD_SHA' | 'GITHUB_ENV' | 'GIT_OP_TIMEOUT', string>
+    Record<
+      'BASE_REF' | 'BASE_SHA' | 'HEAD_SHA' | 'GITHUB_ENV' | 'GIT_OP_TIMEOUT' | 'LC_ALL',
+      string
+    >
   >,
   pathOverride?: string,
   omitGithubEnv = false
@@ -437,4 +440,163 @@ describe('resolve-merge-base.sh — the diff range the panel reviews', { timeout
       await rm(dir, { recursive: true, force: true });
     }
   });
+});
+
+// Same 25s bound as the suite above, and for the same reason: the helper's own
+// 20s subprocess cap is what turns a hang into `hung, not failed`, and a
+// vitest-level timeout firing first would abort the test before that
+// diagnostic is ever produced.
+describe('the sha guard survives a hostile locale', { timeout: 25_000 }, () => {
+  // Why bracket-expression guards need `export LC_ALL=C` at all: see the comment
+  // above that line in resolve-merge-base.sh, which is the single telling.
+  //
+  // What is local to this block: the 'AAA1111' cases above do NOT cover it. They
+  // inherit whatever locale the host happens to have, so they pass on a CI runner
+  // whether the fix is present or not. This block sets a hostile locale
+  // deliberately, which is the only way the gap becomes visible.
+
+  /** A probe is a `case` statement; five seconds is already absurdly generous. */
+  const PROBE_TIMEOUT_MS = 5_000;
+
+  /**
+   * A locale on this host under which `[!0-9a-f]` collates case-insensitively,
+   * or `null` if there is none.
+   *
+   * Probed rather than assumed, because which locales are generated differs by
+   * machine. If none is hostile the test cannot discriminate, and it says so
+   * instead of passing — a green test that could not have failed is worse than an
+   * absent one, because it reads as protection.
+   */
+  function findHostileLocale(): string | null {
+    for (const locale of ['en_US.UTF-8', 'en_GB.UTF-8']) {
+      const probe = spawnSync(
+        'bash',
+        ['-c', 'case "A" in *[!0-9a-f]*) exit 1 ;; *) exit 0 ;; esac'],
+        {
+          env: { ...process.env, LC_ALL: locale },
+          // `spawnSync` blocks the event loop until the child exits, so a bash
+          // that stalls (locale initialisation on a misconfigured box is the
+          // realistic one) hangs the whole runner with no bound. A probe is not
+          // worth that risk.
+          timeout: PROBE_TIMEOUT_MS,
+        }
+      );
+      // A probe that could not run, or was killed on its timeout, tells us
+      // NOTHING about this locale — it is not evidence that the locale is safe.
+      // Move on rather than reading a non-answer as "not hostile".
+      if (probe.error || probe.signal !== null) continue;
+      // exit 0 means 'A' did NOT match [!0-9a-f] — i.e. it collated INSIDE a-f.
+      if (probe.status === 0) return locale;
+    }
+    return null;
+  }
+
+  /**
+   * Resolved ONCE, at collection time, because `it.skipIf` needs the answer
+   * before the test is registered — which is the whole point of the change.
+   */
+  const HOSTILE_LOCALE = findHostileLocale();
+
+  it('pins the collation before the first guard that depends on it', async () => {
+    // THE TEST THAT RUNS EVERYWHERE — and the reason a structural assertion is
+    // correct here, not a smell:
+    //
+    // The fail-open is only OBSERVABLE on a host that has a case-interleaving
+    // locale generated. Standard CI runners do not, so the behavioural cases
+    // below skip there — green, and unable to notice the fix being deleted. A
+    // guard whose only test skips on the machine that gates merges is not a
+    // tested guard.
+    //
+    // Structural assertions are usually wrong because they pin implementation
+    // detail that a refactor should be free to change. Here the structure IS the
+    // behaviour: `export LC_ALL=C` is not an implementation choice — it is the
+    // only mechanism that makes the bracket expressions byte-ordered rather than
+    // collation-ordered, and that mechanism must be in place before the first
+    // guard fires. Any refactor that preserves the guards necessarily preserves
+    // this line. There is no observable output to assert on that a test running
+    // under a CI locale (already C/POSIX) could distinguish from the fix being
+    // absent — so this structural check is the only check that runs where merges
+    // are gated.
+    const script = await readFile(SCRIPT, 'utf8');
+    // The guard patterns are matched as whole CODE lines rather than as bare
+    // bracket expressions, because the comment block above the pin quotes them —
+    // `[!0-9a-f]` appears in prose two lines before the export, and again inside
+    // a worked `case AAA1111 in *[!0-9a-f]*)` example. Searching for the bracket
+    // expression alone finds the prose first and compares against its position,
+    // which sits BEFORE the pin and would make this test pass no matter where
+    // the pin actually is. The pin's own regex needs no such care — `export
+    // LC_ALL=C` occurs once, as code — but it is anchored to a whole line too so
+    // a commented-out `# export LC_ALL=C` cannot satisfy it.
+    const pin = /^\s*export LC_ALL=C\s*$/m.exec(script);
+    const shaGuard = /^\s*case "\$sha" in \*\[!0-9a-f\]\*/m.exec(script);
+    const refGuard = /^\s*-\* \| \*\[!A-Za-z0-9\._\/-\]\*\)/m.exec(script);
+
+    expect(pin, 'the script must export LC_ALL=C').not.toBeNull();
+    expect(shaGuard, 'the sha guard must still be a bracket expression').not.toBeNull();
+    expect(refGuard, 'the BASE_REF guard must still be a bracket expression').not.toBeNull();
+    // Exported, not merely assigned: git and any subshell must see it too.
+    // The pin must precede BOTH guards — sha first in source order, then ref.
+    expect(pin!.index, 'the pin must come BEFORE the sha guard it protects').toBeLessThan(
+      shaGuard!.index
+    );
+    expect(pin!.index, 'the pin must come BEFORE the BASE_REF guard it protects').toBeLessThan(
+      refGuard!.index
+    );
+  });
+
+  // `skipIf`, not an early `return`. A bare `return` inside an `it` body exits
+  // WITHOUT throwing, so vitest records the test as PASSED having asserted nothing
+  // — on every CI runner, which has no case-interleaving locale. `skipIf` makes
+  // the report say SKIPPED, which is the honest word for it.
+  it.skipIf(HOSTILE_LOCALE === null)(
+    'rejects a non-hex sha even when the environment asks for case-insensitive collation',
+    async () => {
+      const locale = HOSTILE_LOCALE as string;
+      const { dir, work, a, head } = await repoFixture();
+      try {
+        const { code, stdout } = await resolve(work, {
+          BASE_REF: 'main',
+          BASE_SHA: a,
+          HEAD_SHA: 'AAA1111',
+          LC_ALL: locale,
+        });
+        expect(code, `the guard must not fail open under ${locale}`).not.toBe(0);
+        expect(stdout).toContain('Invalid sha');
+        // Still never echoed back, whatever the locale.
+        expect(stdout).not.toContain('AAA1111');
+        void head;
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  // WHY THERE IS NO BEHAVIOURAL TEST FOR THE BASE_REF GUARD HERE:
+  //
+  // The BASE_REF guard is `case "$BASE_REF" in -* | *[!A-Za-z0-9._/-]*)`. For a
+  // locale-collation fail-open to occur, a character that SHOULD be rejected
+  // would need to collate inside one of the allowed ranges and thereby be treated
+  // as part of the class (not matched by `[!...]`).
+  //
+  // The sha guard is exposed because its class `[0-9a-f]` is narrow — uppercase
+  // A-F collate inside `a-f` under case-interleaving locales, so `A` looks valid.
+  // The attack input (`AAA1111`) is itself a plausible-looking sha, and uppercase
+  // is meaningful: it represents real hex digits that the guard is meant to
+  // reject.
+  //
+  // The BASE_REF guard's class `[A-Za-z0-9._/-]` already includes BOTH cases
+  // explicitly. Under case-interleaving collation, `A-Z` widens to encompass some
+  // lowercase letters, and `a-z` widens to encompass some uppercase — but the
+  // class already covers the full alphabetic range. What widens is NOT the set of
+  // dangerous characters: shell metacharacters (`;`, `|`, `$`, `&`, newline,
+  // backtick) have code points well outside the letter ranges and do not sort
+  // inside `A-Z` or `a-z` under any standard locale. The only characters that
+  // could be pulled in are accented letters (e.g. `é` between `e` and `f`), but
+  // those are not command-injection vectors.
+  //
+  // Conclusion: the BASE_REF guard does not have the same case-interleaving
+  // fail-open as the sha guard. Adding a behavioural test that cannot actually
+  // fail on any real input would be worse than no test — it reads as coverage and
+  // provides none. The structural assertion above (pin precedes both guards) is
+  // the correct and sufficient addition.
 });
