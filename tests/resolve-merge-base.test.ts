@@ -521,9 +521,15 @@ describe('the sha guard survives a hostile locale', { timeout: 25_000 }, () => {
     // absent — so this structural check is the only check that runs where merges
     // are gated.
     const script = await readFile(SCRIPT, 'utf8');
-    // Anchored to the CODE line, not the first textual match: the comment above
-    // the pin quotes the pattern as an example, and an unanchored search would
-    // find the prose and compare against the wrong position.
+    // The guard patterns are matched as whole CODE lines rather than as bare
+    // bracket expressions, because the comment block above the pin quotes them —
+    // `[!0-9a-f]` appears in prose two lines before the export, and again inside
+    // a worked `case AAA1111 in *[!0-9a-f]*)` example. Searching for the bracket
+    // expression alone finds the prose first and compares against its position,
+    // which sits BEFORE the pin and would make this test pass no matter where
+    // the pin actually is. The pin's own regex needs no such care — `export
+    // LC_ALL=C` occurs once, as code — but it is anchored to a whole line too so
+    // a commented-out `# export LC_ALL=C` cannot satisfy it.
     const pin = /^\s*export LC_ALL=C\s*$/m.exec(script);
     const shaGuard = /^\s*case "\$sha" in \*\[!0-9a-f\]\*/m.exec(script);
     const refGuard = /^\s*-\* \| \*\[!A-Za-z0-9\._\/-\]\*\)/m.exec(script);
