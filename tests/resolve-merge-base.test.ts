@@ -442,7 +442,11 @@ describe('resolve-merge-base.sh — the diff range the panel reviews', { timeout
   });
 });
 
-describe('the sha guard survives a hostile locale', () => {
+// Same 25s bound as the suite above, and for the same reason: the helper's own
+// 20s subprocess cap is what turns a hang into `hung, not failed`, and a
+// vitest-level timeout firing first would abort the test before that
+// diagnostic is ever produced.
+describe('the sha guard survives a hostile locale', { timeout: 25_000 }, () => {
   // WHY THIS EXISTS: `case "$sha" in *[!0-9a-f]*)` is a bracket expression, and a
   // range like `a-f` is COLLATION-ordered, not byte-ordered. Under a locale that
   // interleaves case, 'A' sorts inside a-f, the pattern does not match, and the
