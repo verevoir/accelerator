@@ -70,7 +70,10 @@ async function repoFixture() {
 async function resolve(
   work: string,
   env: Partial<
-    Record<'BASE_REF' | 'BASE_SHA' | 'HEAD_SHA' | 'GITHUB_ENV' | 'GIT_OP_TIMEOUT' | 'LC_ALL', string>
+    Record<
+      'BASE_REF' | 'BASE_SHA' | 'HEAD_SHA' | 'GITHUB_ENV' | 'GIT_OP_TIMEOUT' | 'LC_ALL',
+      string
+    >
   >,
   pathOverride?: string,
   omitGithubEnv = false
@@ -475,7 +478,7 @@ describe('the sha guard survives a hostile locale', () => {
           // realistic one) hangs the whole runner with no bound. A probe is not
           // worth that risk.
           timeout: PROBE_TIMEOUT_MS,
-        },
+        }
       );
       // A probe that could not run, or was killed on its timeout, tells us
       // NOTHING about this locale — it is not evidence that the locale is safe.
@@ -514,10 +517,7 @@ describe('the sha guard survives a hostile locale', () => {
     expect(pin, 'the script must export LC_ALL=C').not.toBeNull();
     expect(guard, 'the sha guard must still be a bracket expression').not.toBeNull();
     // Exported, not merely assigned: git and any subshell must see it too.
-    expect(
-      pin!.index,
-      'the pin must come BEFORE the guard it protects',
-    ).toBeLessThan(guard!.index);
+    expect(pin!.index, 'the pin must come BEFORE the guard it protects').toBeLessThan(guard!.index);
   });
 
   // `skipIf`, not an early `return`. A bare `return` inside an `it` body exits
@@ -544,6 +544,6 @@ describe('the sha guard survives a hostile locale', () => {
       } finally {
         await rm(dir, { recursive: true, force: true });
       }
-    },
+    }
   );
 });
