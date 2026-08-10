@@ -533,14 +533,12 @@ describe('the sha guard survives a hostile locale', { timeout: 25_000 }, () => {
     expect(refGuard, 'the BASE_REF guard must still be a bracket expression').not.toBeNull();
     // Exported, not merely assigned: git and any subshell must see it too.
     // The pin must precede BOTH guards — sha first in source order, then ref.
-    expect(
-      pin!.index,
-      'the pin must come BEFORE the sha guard it protects'
-    ).toBeLessThan(shaGuard!.index);
-    expect(
-      pin!.index,
-      'the pin must come BEFORE the BASE_REF guard it protects'
-    ).toBeLessThan(refGuard!.index);
+    expect(pin!.index, 'the pin must come BEFORE the sha guard it protects').toBeLessThan(
+      shaGuard!.index
+    );
+    expect(pin!.index, 'the pin must come BEFORE the BASE_REF guard it protects').toBeLessThan(
+      refGuard!.index
+    );
   });
 
   // `skipIf`, not an early `return`. A bare `return` inside an `it` body exits
