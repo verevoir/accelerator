@@ -44,6 +44,11 @@ Source/board access only — accelerator makes **no** LLM calls, so **no model A
 belongs here. `GITHUB_TOKEN` (GitHub reads + writes/PRs), `NOTION_API_KEY` (Notion source +
 board), `TRELLO_*` (Trello board). Public repos / local paths need no token.
 
+`GITHUB_TOKEN` unset falls back to `gh auth token` — a local-dev convenience only. The
+token is returned into the call, never assigned into `process.env`, and where `gh` is
+absent (the runtime container image) the failure names `GITHUB_TOKEN` rather than
+surfacing an ENOENT.
+
 ## Project context
 
 This repo is one of several sibling packages (`@verevoir/capabilities`, `sources`, `context`,

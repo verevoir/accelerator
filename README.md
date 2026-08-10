@@ -105,6 +105,14 @@ keep the model keys on the moat.
 Local paths and public GitHub repos need no token; the tokens gate private
 sources and writes.
 
+When `GITHUB_TOKEN` is unset the server falls back to `gh auth token`, so a
+developer already logged into the `gh` CLI needs no further setup. That is a
+local-dev convenience, not a deployment mechanism: the token is resolved into
+the call and never written back into `process.env` (the host process reads that
+same variable for its own GitHub client), and where `gh` is absent — the runtime
+container image has no `gh` — the call fails naming `GITHUB_TOKEN` rather than
+surfacing an exec error from the middle of a tool call.
+
 ## Tools it registers (22)
 
 **Source** (cached + tree-sitter indexed via `@verevoir/context`): `read_file`,

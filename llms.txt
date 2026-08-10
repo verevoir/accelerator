@@ -26,7 +26,9 @@ split: commodity server gets the code/board keys, the moat gets the model keys.
 
 - GITHUB_TOKEN — GitHub source reads + writes/PRs (read_file, grep, find_symbol,
   code_graph, write_file, edit_file, multi_edit, insert, delete_block, commit_files,
-  ensure_fork, ensure_branch, open_pull_request).
+  ensure_fork, ensure_branch, open_pull_request). Unset falls back to
+  `gh auth token` (local-dev convenience): resolved into the call, never
+  assigned into process.env; with no gh the error names GITHUB_TOKEN.
 - NOTION_API_KEY — Notion source + the Notion work-tracker board.
 - TRELLO_API_KEY / TRELLO_API_TOKEN / TRELLO_REFERER — Trello work-tracker.
 - AIGENCY_AUDIT / AIGENCY_AUDIT_DIR — emit audit spans + where to write them.
