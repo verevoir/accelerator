@@ -43,25 +43,36 @@ export async function pickSourceAdapter(sourceUrl: string): Promise<SourceAdapte
   return fs;
 }
 
-let ghCliToken: string | null = null;
+/** Milliseconds a `gh auth token` spawn may take before it is killed. `gh` is a
+ * local process reading a config file or a keychain; anything past this is
+ * wedged, and every GitHub tool call waits behind it. */
+const GH_CLI_TIMEOUT_MS = 5_000;
+
+/** `undefined` until the `gh` route has been tried; the outcome — token or
+ * `null` for a miss — afterwards. */
+let ghCliToken: string | null | undefined;
 /** Local-dev fallback for the GitHub credential: borrow the `gh` CLI's auth
  * token so a developer already logged into `gh` can read their private repos
  * without configuring anything. Returns null — never throws — when `gh` is
  * absent or unauthenticated, which is every deployment without the CLI (the
  * runtime container image has no `gh`), so the caller can name the credential
- * that is actually missing instead of surfacing an ENOENT. A hit is remembered
- * for the process; a miss is not, so `gh auth login` mid-session takes effect
- * without a restart. */
+ * that is actually missing instead of surfacing an ENOENT.
+ *
+ * Tried at most once per process, and the miss is remembered as firmly as the
+ * hit: `resolveSourceEnv` runs on every GitHub tool call, so a `gh` that keeps
+ * failing would otherwise put a subprocess spawn on a hot path indefinitely.
+ * The spawn is timeout-bounded for the same reason. */
 function githubTokenFromGhCli(): string | null {
-  if (ghCliToken) return ghCliToken;
+  if (ghCliToken !== undefined) return ghCliToken;
   try {
     const token = execFileSync('gh', ['auth', 'token'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: GH_CLI_TIMEOUT_MS,
     }).trim();
-    return token ? (ghCliToken = token) : null;
+    return (ghCliToken = token || null);
   } catch {
-    return null;
+    return (ghCliToken = null);
   }
 }
 
