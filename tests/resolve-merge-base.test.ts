@@ -447,16 +447,13 @@ describe('resolve-merge-base.sh — the diff range the panel reviews', { timeout
 // vitest-level timeout firing first would abort the test before that
 // diagnostic is ever produced.
 describe('the sha guard survives a hostile locale', { timeout: 25_000 }, () => {
-  // WHY THIS EXISTS: `case "$sha" in *[!0-9a-f]*)` is a bracket expression, and a
-  // range like `a-f` is COLLATION-ordered, not byte-ordered. Under a locale that
-  // interleaves case, 'A' sorts inside a-f, the pattern does not match, and the
-  // guard ACCEPTS a non-hex string — a fail-open in the one check standing between
-  // an attacker-controlled ref and a git command line. The script pins LC_ALL=C to
-  // stop that.
+  // Why bracket-expression guards need `export LC_ALL=C` at all: see the comment
+  // above that line in resolve-merge-base.sh, which is the single telling.
   //
-  // The existing 'AAA1111' cases above do NOT cover this: they inherit whatever
-  // locale the host happens to have, so they pass on a CI runner whether the fix
-  // is present or not. This block sets the hostile locale deliberately.
+  // What is local to this block: the 'AAA1111' cases above do NOT cover it. They
+  // inherit whatever locale the host happens to have, so they pass on a CI runner
+  // whether the fix is present or not. This block sets a hostile locale
+  // deliberately, which is the only way the gap becomes visible.
 
   /** A probe is a `case` statement; five seconds is already absurdly generous. */
   const PROBE_TIMEOUT_MS = 5_000;
