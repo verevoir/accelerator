@@ -358,25 +358,77 @@ describe('resolve-merge-base.sh — the diff range the panel reviews', { timeout
     }
   });
 
-  it('still resolves (the timeout wrapper is transparent) when coreutils timeout is absent from PATH', async () => {
+  it('fails closed when coreutils timeout is absent from PATH', async () => {
+    // Previously: bounded() fell back to `shift; "$@"` — silently dropping the bound and
+    // letting a hung remote hold the whole job envelope. Now: the script emits ::error and
+    // exits 1 immediately, so the absence is a hard failure, not a silent degradation.
+    // Discrimination: supply PATH with bash + git but NO timeout; expect non-zero exit and
+    // the error message, with no MERGE_BASE exported.
     const { dir, work, a, head } = await repoFixture();
     const bin = await mkdtemp(join(tmpdir(), 'nobin-'));
     try {
-      // a PATH carrying every external command the script needs EXCEPT timeout —
-      // exercising bounded()'s fallback branch
+      // PATH carrying every external command the script needs EXCEPT timeout
       for (const tool of ['bash', 'git']) {
         const { stdout: p } = await run('which', [tool]);
         await symlink(p.trim(), join(bin, tool));
       }
-      const { code, exported } = await resolve(
+      const { code, stdout, exported } = await resolve(
         work,
         { BASE_REF: 'main', BASE_SHA: a, HEAD_SHA: head },
         bin
       );
+      expect(code).not.toBe(0);
+      expect(stdout).toContain('timeout unavailable');
+      expect(exported).not.toContain('MERGE_BASE=');
+      void head; // used via env above
+    } finally {
+      await rm(bin, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // '05' is the case that distinguishes the guard's real rule from "rejects zero":
+  // it is a non-zero, perfectly sane 5-second bound, and the '0*' arm turns it away
+  // anyway. Without it the comment above the validator would be unfalsifiable.
+  for (const bad of ['', '0', '00', '05', 'abc', '10s', '-1'] as const) {
+    it(`fails closed when GIT_OP_TIMEOUT is '${bad || '<empty>'}' (invalid — would disable or corrupt the bound)`, async () => {
+      // Fix 2+3: GIT_OP_TIMEOUT uses the non-colon form (${VAR-default}) so an
+      // explicitly-empty value reaches the validator; the validator rejects '', any
+      // string with a non-digit, and ANY leading zero. 'timeout 0 cmd' means NO limit;
+      // non-numeric values corrupt the command line; a leading zero is refused as a
+      // shape rather than parsed. All are hard failures, not silent passes.
+      const { dir, work, a, head } = await repoFixture();
+      try {
+        const { code, stdout, exported } = await resolve(work, {
+          BASE_REF: 'main',
+          BASE_SHA: a,
+          HEAD_SHA: head,
+          GIT_OP_TIMEOUT: bad,
+        });
+        expect(code).not.toBe(0);
+        expect(stdout).toContain('Invalid GIT_OP_TIMEOUT');
+        expect(exported).not.toContain('MERGE_BASE=');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it('accepts a valid positive-integer GIT_OP_TIMEOUT override', async () => {
+    // The validator must not block a legitimate override — a test environment will
+    // supply a short value to drive the slow-git shim test; a well-configured
+    // deployment may legitimately widen the bound.
+    const { dir, work, a, head } = await repoFixture();
+    try {
+      const { code, exported } = await resolve(work, {
+        BASE_REF: 'main',
+        BASE_SHA: a,
+        HEAD_SHA: head,
+        GIT_OP_TIMEOUT: '5',
+      });
       expect(code).toBe(0);
       expect(exported).toContain(`MERGE_BASE=${a}`);
     } finally {
-      await rm(bin, { recursive: true, force: true });
       await rm(dir, { recursive: true, force: true });
     }
   });
