@@ -387,12 +387,16 @@ describe('resolve-merge-base.sh — the diff range the panel reviews', { timeout
     }
   });
 
-  for (const bad of ['', '0', '00', 'abc', '10s', '-1'] as const) {
+  // '05' is the case that distinguishes the guard's real rule from "rejects zero":
+  // it is a non-zero, perfectly sane 5-second bound, and the '0*' arm turns it away
+  // anyway. Without it the comment above the validator would be unfalsifiable.
+  for (const bad of ['', '0', '00', '05', 'abc', '10s', '-1'] as const) {
     it(`fails closed when GIT_OP_TIMEOUT is '${bad || '<empty>'}' (invalid — would disable or corrupt the bound)`, async () => {
       // Fix 2+3: GIT_OP_TIMEOUT uses the non-colon form (${VAR-default}) so an
-      // explicitly-empty value reaches the validator; the validator rejects '', '0*',
-      // and non-digit strings. 'timeout 0 cmd' means NO limit; non-numeric values
-      // corrupt the command line. Both are hard failures, not silent passes.
+      // explicitly-empty value reaches the validator; the validator rejects '', any
+      // string with a non-digit, and ANY leading zero. 'timeout 0 cmd' means NO limit;
+      // non-numeric values corrupt the command line; a leading zero is refused as a
+      // shape rather than parsed. All are hard failures, not silent passes.
       const { dir, work, a, head } = await repoFixture();
       try {
         const { code, stdout, exported } = await resolve(work, {

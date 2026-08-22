@@ -72,11 +72,20 @@ fi
 # through to the validator below rather than silently replaced by the default — which
 # would leave the '' arm of the validator unreachable.
 GIT_OP_TIMEOUT="${GIT_OP_TIMEOUT-10}"
-# Validate: must be a non-empty string of digits and not zero ('timeout 0' means no
-# limit, and GIT_OP_TIMEOUT is interpolated straight onto the command line).
+# Validate: a non-empty string of digits with NO leading zero. Three arms, and the
+# third is deliberately WIDER than "not zero":
+#   ''        nothing to bound with.
+#   *[!0-9]*  any non-digit. GIT_OP_TIMEOUT is interpolated straight onto the command
+#             line, so 'abc' or '10s' corrupts it.
+#   0*        ANY leading zero. That covers '0' and '00' — where 'timeout 0 cmd' means
+#             NO limit, the fail-open this guard exists to close — but it also rejects
+#             '05', which would otherwise be a perfectly good 5-second bound. Refusing
+#             the whole shape keeps the guard one unambiguous pattern and turns away
+#             octal-looking input outright, which is worth more than accepting a
+#             leading-zero spelling nobody writes on purpose.
 case "$GIT_OP_TIMEOUT" in
   '' | *[!0-9]* | 0*)
-    echo "::error title=Invalid GIT_OP_TIMEOUT::GIT_OP_TIMEOUT must be a positive integer (got: ${#GIT_OP_TIMEOUT} chars). Failing closed."
+    echo "::error title=Invalid GIT_OP_TIMEOUT::GIT_OP_TIMEOUT must be a positive integer with no leading zero (got: ${#GIT_OP_TIMEOUT} chars). Failing closed."
     exit 1
     ;;
 esac
