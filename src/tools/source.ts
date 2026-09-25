@@ -14,7 +14,7 @@ import {
 import { queryCodeGraph } from '../graph.js';
 import { jsonText } from '../result.js';
 import { fileURLToPath } from 'node:url';
-import { isGitlabUrl, parseGitlabProjectUrl } from '../sources/gitlab.js';
+import { isGitlabUrl, parseGitlabProjectUrl } from '@verevoir/sources/gitlab';
 
 // A `file://` URL and the bare absolute path it denotes must resolve to the
 // SAME cache key, or warm-then-query mismatches (find_symbol / code_graph warm

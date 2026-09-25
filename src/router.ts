@@ -5,8 +5,8 @@ import { envFromTrelloProcessEnv } from '@verevoir/workflows/trello';
 import { envFromNotionProcessEnv } from '@verevoir/workflows/notion';
 import { envFromObsidianProcessEnv, parseObsidianBoardPath } from '@verevoir/workflows/obsidian';
 import { envFromBacklogProcessEnv, parseBacklogBoardPath } from '@verevoir/workflows/backlog';
-import { wrapWorkflowWithCache, wrapWithCache } from '@verevoir/context';
-import { isGitlabUrl } from './sources/gitlab.js';
+import { wrapWorkflowWithCache } from '@verevoir/context';
+import { isGitlabUrl } from '@verevoir/sources/gitlab';
 
 // ---------------------------------------------------------------------------
 // Source adapter routing
@@ -30,10 +30,6 @@ function classifySourceUrl(sourceUrl: string): SourceKind {
   );
 }
 
-/** The GitLab adapter lives in this package (not yet in `@verevoir/context`),
- * so its read-through cache wrapper is built here once and reused. */
-let gitlabCached: SourceAdapter | undefined;
-
 /** Dynamically import and return the cached SourceAdapter for the given URL. */
 export async function pickSourceAdapter(sourceUrl: string): Promise<SourceAdapter> {
   const kind = classifySourceUrl(sourceUrl);
@@ -42,8 +38,8 @@ export async function pickSourceAdapter(sourceUrl: string): Promise<SourceAdapte
     return github;
   }
   if (kind === 'gitlab') {
-    const { gitlab } = await import('./sources/gitlab.js');
-    return gitlabCached ?? (gitlabCached = wrapWithCache(gitlab));
+    const { gitlab } = await import('@verevoir/context/gitlab');
+    return gitlab;
   }
   if (kind === 'notion') {
     const { notion } = await import('@verevoir/context/notion');
