@@ -18,6 +18,19 @@ describe('commitArgs', () => {
     });
   });
 
+  it('requires branch + commitMessage for a GitLab source', () => {
+    expect(() => commitArgs('https://gitlab.com/group/repo', undefined, 'msg')).toThrow(
+      /GitLab source/
+    );
+    expect(() => commitArgs('https://gitlab.com/group/repo', 'main', undefined)).toThrow(
+      /GitLab source/
+    );
+    expect(commitArgs('https://gitlab.com/group/repo', 'main', 'msg')).toEqual({
+      branch: 'main',
+      commitMessage: 'msg',
+    });
+  });
+
   it('coerces to empty strings for filesystem + Notion sources (commit args ignored)', () => {
     expect(commitArgs('/abs/path')).toEqual({ branch: '', commitMessage: '' });
     expect(commitArgs('file:///tmp/repo')).toEqual({ branch: '', commitMessage: '' });

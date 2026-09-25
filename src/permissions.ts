@@ -55,7 +55,8 @@ export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   multi_edit: 'write-local',
   insert: 'write-local',
   delete_block: 'write-local',
-  // write-github — git / GitHub mutations.
+  // write-github — git-host mutations (GitHub and GitLab; the class keeps its
+  // original name so existing ACCELERATOR_TOOLS grants stay valid).
   commit_files: 'write-github',
   ensure_fork: 'write-github',
   ensure_branch: 'write-github',

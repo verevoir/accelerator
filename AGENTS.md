@@ -41,8 +41,10 @@ capabilities → accelerator, never the reverse.
 ## Credentials
 
 Source/board access only — accelerator makes **no** LLM calls, so **no model API key**
-belongs here. `GITHUB_TOKEN` (GitHub reads + writes/PRs), `NOTION_API_KEY` (Notion source +
-board), `TRELLO_*` (Trello board). Public repos / local paths need no token.
+belongs here. `GITHUB_TOKEN` (GitHub reads + writes/PRs), `GITLAB_TOKEN` (GitLab reads + writes/MRs; hosts are
+gitlab.com plus exactly those in `GITLAB_HOSTS`, HTTPS only — every routed host is sent the token), `NOTION_API_KEY` (Notion source + board), `TRELLO_*`
+(Trello board). Local paths and public GitLab projects need no token (GitHub needs `GITHUB_TOKEN` or `gh`). Each credential is read only when a
+URL routes to its backend, so a project configures just the backends it uses.
 
 `GITHUB_TOKEN` unset falls back to `gh auth token` — a local-dev convenience only. The
 token is returned into the call, never assigned into `process.env`, and where `gh` is
