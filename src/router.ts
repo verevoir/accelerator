@@ -5,17 +5,19 @@ import { envFromTrelloProcessEnv } from '@verevoir/workflows/trello';
 import { envFromNotionProcessEnv } from '@verevoir/workflows/notion';
 import { envFromObsidianProcessEnv, parseObsidianBoardPath } from '@verevoir/workflows/obsidian';
 import { envFromBacklogProcessEnv, parseBacklogBoardPath } from '@verevoir/workflows/backlog';
-import { wrapWorkflowWithCache } from '@verevoir/context';
+import { wrapWorkflowWithCache, wrapWithCache } from '@verevoir/context';
+import { isGitlabUrl } from './sources/gitlab.js';
 
 // ---------------------------------------------------------------------------
 // Source adapter routing
 // ---------------------------------------------------------------------------
 
-type SourceKind = 'github' | 'fs' | 'notion';
+type SourceKind = 'github' | 'gitlab' | 'fs' | 'notion';
 
 function classifySourceUrl(sourceUrl: string): SourceKind {
   if (/^https?:\/\/(www\.)?github\.com\//.test(sourceUrl)) return 'github';
   if (/^https?:\/\/(www\.)?notion\.so\//.test(sourceUrl)) return 'notion';
+  if (isGitlabUrl(sourceUrl)) return 'gitlab';
   if (
     sourceUrl.startsWith('/') ||
     sourceUrl.startsWith('~/') ||
@@ -24,9 +26,13 @@ function classifySourceUrl(sourceUrl: string): SourceKind {
   )
     return 'fs';
   throw new Error(
-    `Unsupported source URL: ${sourceUrl}. Expected github.com URL, notion.so URL, or absolute filesystem path.`
+    `Unsupported source URL: ${sourceUrl}. Expected github.com URL, https GitLab URL (gitlab.com or a host in GITLAB_HOSTS), notion.so URL, or absolute filesystem path.`
   );
 }
+
+/** The GitLab adapter lives in this package (not yet in `@verevoir/context`),
+ * so its read-through cache wrapper is built here once and reused. */
+let gitlabCached: SourceAdapter | undefined;
 
 /** Dynamically import and return the cached SourceAdapter for the given URL. */
 export async function pickSourceAdapter(sourceUrl: string): Promise<SourceAdapter> {
@@ -34,6 +40,10 @@ export async function pickSourceAdapter(sourceUrl: string): Promise<SourceAdapte
   if (kind === 'github') {
     const { github } = await import('@verevoir/context/github');
     return github;
+  }
+  if (kind === 'gitlab') {
+    const { gitlab } = await import('./sources/gitlab.js');
+    return gitlabCached ?? (gitlabCached = wrapWithCache(gitlab));
   }
   if (kind === 'notion') {
     const { notion } = await import('@verevoir/context/notion');
@@ -97,15 +107,30 @@ function resolveGithubSourceEnv(): { token: string; forkOrg: string } {
   return { token, forkOrg: process.env.SOURCE_FORK_ORG?.trim() || 'verevoir' };
 }
 
-/** Resolve the SourceEnv appropriate for the given URL. GitHub
- * sources require `GITHUB_TOKEN` (or the `gh` CLI's auth); Notion sources
- * require `NOTION_API_KEY`; filesystem sources need no token. */
+/** GitLab credential: `GITLAB_TOKEN`, resolved into a returned value (never
+ * into `process.env`), as for GitHub. Optional — public projects read
+ * anonymously, and the adapter names `GITLAB_TOKEN` on any refusal. Forks land
+ * in `GITLAB_FORK_NAMESPACE`, or the token owner's namespace when unset. */
+function resolveGitlabSourceEnv(): { token: string; forkOrg: string } {
+  return {
+    token: process.env.GITLAB_TOKEN?.trim() ?? '',
+    forkOrg: process.env.GITLAB_FORK_NAMESPACE?.trim() ?? '',
+  };
+}
+
+/** Resolve the SourceEnv appropriate for the given URL. Each backend's
+ * credential is read only when a URL routes to it, so a deployment configures
+ * just the backends its projects use. GitHub sources require `GITHUB_TOKEN`
+ * (or the `gh` CLI's auth); GitLab sources use `GITLAB_TOKEN` (optional for
+ * public reads); Notion sources require `NOTION_API_KEY`; filesystem sources
+ * need no token. */
 export function resolveSourceEnv(sourceUrl: string): {
   token: string;
   forkOrg: string;
 } {
   const kind = classifySourceUrl(sourceUrl);
   if (kind === 'github') return resolveGithubSourceEnv();
+  if (kind === 'gitlab') return resolveGitlabSourceEnv();
   if (kind === 'notion') {
     const token = process.env.NOTION_API_KEY;
     if (!token) throw Object.assign(new Error('NOTION_API_KEY not set'), { status: 401 });

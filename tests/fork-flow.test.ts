@@ -114,6 +114,50 @@ describe('fork-isolated write-flow tools (STDIO-409)', () => {
     );
   });
 
+  it('open_pull_request builds a GitLab fork head from the full (nested) project path', async () => {
+    const a = adapter();
+    vi.mocked(pickSourceAdapter).mockResolvedValue(a as never);
+    await harness().open_pull_request({
+      sourceUrl: 'https://gitlab.com/group/sub/repo',
+      workingUrl: 'https://gitlab.com/forks/team/repo',
+      branch: 'feature-x',
+      base: 'main',
+      title: 't',
+      body: 'b',
+    });
+    // The owner alone cannot name a GitLab project (namespaces nest), so the
+    // head carries the fork's whole path for the adapter to split back apart.
+    expect(a.openPullRequest).toHaveBeenCalledWith(
+      env,
+      'https://gitlab.com/group/sub/repo',
+      'forks/team/repo:feature-x',
+      'main',
+      't',
+      'b'
+    );
+  });
+
+  it('open_pull_request refuses a GitLab fork on a different instance from the source', async () => {
+    const a = adapter();
+    vi.mocked(pickSourceAdapter).mockResolvedValue(a as never);
+    vi.stubEnv('GITLAB_HOSTS', 'code.example.com');
+    try {
+      await expect(
+        harness().open_pull_request({
+          sourceUrl: 'https://gitlab.com/group/repo',
+          workingUrl: 'https://code.example.com/forks/repo',
+          branch: 'feature-x',
+          base: 'main',
+          title: 't',
+          body: 'b',
+        })
+      ).rejects.toThrow(/same GitLab instance/);
+      expect(a.openPullRequest).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('surfaces a fork failure to the caller rather than swallowing it', async () => {
     const a = adapter();
     a.ensureFork.mockRejectedValueOnce(new Error('GitHub forkRepo failed (403)'));

@@ -13,6 +13,8 @@ capabilities → accelerator, never the reverse.
   (file mutation), `graph.ts` (code graph) + `architecture.ts` (deterministic
   architecture-conformance checks over the graph), `tiers.ts` / `registry.ts` / `metering.ts` (the
   LLM binding), `audit.ts` / `otlp.ts` (telemetry), `http.ts` (the streamable-HTTP shared-cache server), `loop/*` (raw refine/search/eval primitives).
+- `src/sources/gitlab.ts` — the GitLab `SourceAdapter` (REST v4), held here until
+  `@verevoir/sources` ships its planned `/gitlab` subpath.
 - `src/tools/` — MCP tool registrations: `source.ts` (read/list/tree/grep/find_symbol/
   code_graph/write/edit/multi_edit/insert/delete_block/commit_files/fork/branch/PR), `workflow.ts`
   (board CRUD).
@@ -41,8 +43,10 @@ capabilities → accelerator, never the reverse.
 ## Credentials
 
 Source/board access only — accelerator makes **no** LLM calls, so **no model API key**
-belongs here. `GITHUB_TOKEN` (GitHub reads + writes/PRs), `NOTION_API_KEY` (Notion source +
-board), `TRELLO_*` (Trello board). Public repos / local paths need no token.
+belongs here. `GITHUB_TOKEN` (GitHub reads + writes/PRs), `GITLAB_TOKEN` (GitLab reads + writes/MRs; hosts are
+gitlab.com plus exactly those in `GITLAB_HOSTS`, HTTPS only — every routed host is sent the token), `NOTION_API_KEY` (Notion source + board), `TRELLO_*`
+(Trello board). Local paths and public GitLab projects need no token (GitHub needs `GITHUB_TOKEN` or `gh`). Each credential is read only when a
+URL routes to its backend, so a project configures just the backends it uses.
 
 `GITHUB_TOKEN` unset falls back to `gh auth token` — a local-dev convenience only. The
 token is returned into the call, never assigned into `process.env`, and where `gh` is

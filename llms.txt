@@ -29,6 +29,12 @@ split: commodity server gets the code/board keys, the moat gets the model keys.
   ensure_fork, ensure_branch, open_pull_request). Unset falls back to
   `gh auth token` (local-dev convenience): resolved into the call, never
   assigned into process.env; with no gh the error names GITHUB_TOKEN.
+- GITLAB_TOKEN — GitLab source reads + writes/MRs (same tools; `api` scope for
+  writes, `read_api` for reads). Optional for public projects. GitLab hosts:
+  gitlab.com plus exactly the hosts in GITLAB_HOSTS (comma-separated
+  self-hosted hostnames), HTTPS only — no lookalike matching, since every
+  routed host is sent GITLAB_TOKEN. GITLAB_FORK_NAMESPACE — where ensure_fork
+  forks (default: the token owner's namespace).
 - NOTION_API_KEY — Notion source + the Notion work-tracker board.
 - TRELLO_API_KEY / TRELLO_API_TOKEN / TRELLO_REFERER — Trello work-tracker.
 - AIGENCY_AUDIT / AIGENCY_AUDIT_DIR — emit audit spans + where to write them.
@@ -38,7 +44,10 @@ split: commodity server gets the code/board keys, the moat gets the model keys.
   deliberate hosting choice). The startHttp() library API defaults the port to
   0 (OS-assigned).
 
-Public repos / local paths need no token; tokens gate private sources + writes.
+Local paths and public GitLab projects need no token; GitHub needs GITHUB_TOKEN
+or a logged-in gh; tokens gate private sources + writes. Each credential is read
+only when a URL routes to that backend, so configure just the backends a project
+uses — a GitLab-only project needs no GitHub or Notion credential, and vice versa.
 
 ## Tools (22)
 
@@ -62,7 +71,7 @@ the identical source + board tools onto pi — no MCP server process.
 Because pi runs tools in-process, the plugin ships an annotation-driven least-privilege scope.
 Five classes: read (every readOnlyHint tool), write-local (write_file, edit_file, multi_edit,
 insert, delete_block), write-github (commit_files, ensure_fork, ensure_branch,
-open_pull_request), cards-write (create_card, update_card, move_card, add_comment), and shell
+open_pull_request — GitHub and GitLab alike), cards-write (create_card, update_card, move_card, add_comment), and shell
 (no accelerator tool — gates only pi's native bash). Two env knobs:
 - ACCELERATOR_TOOLS — comma-separated class names and/or explicit tool names that may register.
   Default when unset: read. Out-of-scope tools are never registered (fail-closed); unknown

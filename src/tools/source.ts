@@ -14,6 +14,7 @@ import {
 import { queryCodeGraph } from '../graph.js';
 import { jsonText } from '../result.js';
 import { fileURLToPath } from 'node:url';
+import { isGitlabUrl, parseGitlabProjectUrl } from '../sources/gitlab.js';
 
 // A `file://` URL and the bare absolute path it denotes must resolve to the
 // SAME cache key, or warm-then-query mismatches (find_symbol / code_graph warm
@@ -23,10 +24,11 @@ export function normalizeSourceUrl(sourceUrl: string): string {
   return sourceUrl.startsWith('file://') ? fileURLToPath(sourceUrl) : sourceUrl;
 }
 
-// `branch` + `commitMessage` are needed only for GitHub commits; filesystem and
-// Notion writes ignore them. Validate that here so the tool schemas can mark
-// them OPTIONAL (required-but-ignored was a smell), and coerce to strings for
-// the adapter call. A GitHub source still gets a clear error if they're missing.
+// `branch` + `commitMessage` are needed only for GitHub / GitLab commits;
+// filesystem and Notion writes ignore them. Validate that here so the tool
+// schemas can mark them OPTIONAL (required-but-ignored was a smell), and coerce
+// to strings for the adapter call. A git-host source still gets a clear error if
+// they're missing.
 export function commitArgs(
   sourceUrl: string,
   branch?: string,
@@ -35,6 +37,9 @@ export function commitArgs(
   const isGitHub = /^https?:\/\/(www\.)?github\.com\//i.test(sourceUrl);
   if (isGitHub && (!branch || !commitMessage)) {
     throw new Error('branch and commitMessage are required when writing to a GitHub source.');
+  }
+  if (isGitlabUrl(sourceUrl) && (!branch || !commitMessage)) {
+    throw new Error('branch and commitMessage are required when writing to a GitLab source.');
   }
   return { branch: branch ?? '', commitMessage: commitMessage ?? '' };
 }
@@ -48,6 +53,25 @@ export function ghOwner(repoUrl: string): string {
   return m[1];
 }
 
+// The cross-repo head for a PR/MR from a fork. GitHub wants `<owner>:<branch>`;
+// GitLab needs the fork's full project path (namespaces nest, so the owner alone
+// cannot identify it) — the adapter splits `<project path>:<branch>` back apart.
+// A GitLab MR is resolved against the target's instance, so a fork on another
+// instance (or a GitHub fork of a GitLab project) is refused, not mis-resolved.
+export function forkHead(sourceUrl: string, workingUrl: string, branch: string): string {
+  if (isGitlabUrl(sourceUrl) || isGitlabUrl(workingUrl)) {
+    const source = isGitlabUrl(sourceUrl) ? parseGitlabProjectUrl(sourceUrl).apiBase : sourceUrl;
+    const working = isGitlabUrl(workingUrl) ? parseGitlabProjectUrl(workingUrl) : undefined;
+    if (!working || working.apiBase !== source) {
+      throw new Error(
+        `The working URL (${workingUrl}) must be a fork on the same GitLab instance as the source (${sourceUrl}).`
+      );
+    }
+    return `${working.projectPath}:${branch}`;
+  }
+  return `${ghOwner(workingUrl)}:${branch}`;
+}
+
 export function registerSourceTools(server: ToolHost): void {
   // -------------------------------------------------------------------------
   // read_file
@@ -57,12 +81,12 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        "Read a file's full contents from any source — a local repo (absolute path), a GitHub repo, or Notion. Prefer this over the built-in file Read for project/repo files: reads are cached per (sourceUrl, ref, path) and the cache is shared with grep/find_symbol, so reading also warms the index for later search. Returns { content, sha }.",
+        "Read a file's full contents from any source — a local repo (absolute path), a GitHub repo, a GitLab project, or Notion. Prefer this over the built-in file Read for project/repo files: reads are cached per (sourceUrl, ref, path) and the cache is shared with grep/find_symbol, so reading also warms the index for later search. Returns { content, sha }.",
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         path: z.string().describe('File path within the source.'),
         ref: z.string().optional().describe('Git ref / branch / sha. Omit for default branch.'),
@@ -84,12 +108,12 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'List directory entries at a path prefix within a source (local path, GitHub repo, or Notion page tree). Use it to orient before reading; prefer over shell ls/find for project files. Returns DirEntry[] (name, type, path, sha).',
+        'List directory entries at a path prefix within a source (local path, GitHub repo, GitLab project, or Notion page tree). Use it to orient before reading; prefer over shell ls/find for project files. Returns DirEntry[] (name, type, path, sha).',
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         prefix: z.string().optional().describe("Directory prefix to list. Defaults to root ('')."),
         ref: z.string().optional().describe('Git ref / branch / sha. Omit for default branch.'),
@@ -111,12 +135,12 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Fetch the full file tree for a source (local path, GitHub repo, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag.',
+        'Fetch the full file tree for a source (local path, GitHub repo, GitLab project, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag.',
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         ref: z.string().optional().describe('Git ref / branch / sha. Omit for default branch.'),
       },
@@ -142,7 +166,7 @@ export function registerSourceTools(server: ToolHost): void {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         pattern: z.string().describe('Plain-text substring to search for.'),
         ref: z
@@ -180,7 +204,7 @@ export function registerSourceTools(server: ToolHost): void {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         name: z.string().describe('Symbol name to search (substring match, case-insensitive).'),
         ref: z
@@ -222,12 +246,12 @@ export function registerSourceTools(server: ToolHost): void {
         openWorldHint: true,
       },
       description:
-        "Write a file's full contents to a source. Always prefer this (and edit_file) over the built-in Write or shell redirection for a covered path: it commits the change AND drops the file from the shared read cache so the next grep/find_symbol re-fetches — a write that bypasses the MCP leaves that cache stale and wrong for the rest of the session. GitHub sources commit to the given branch via the contents API (branch + commitMessage required there); filesystem + Notion sources write directly with no git staging, so omit branch + commitMessage. Returns { ok: true }.",
+        "Write a file's full contents to a source. Always prefer this (and edit_file) over the built-in Write or shell redirection for a covered path: it commits the change AND drops the file from the shared read cache so the next grep/find_symbol re-fetches — a write that bypasses the MCP leaves that cache stale and wrong for the rest of the session. GitHub + GitLab sources commit to the given branch (branch + commitMessage required there); filesystem + Notion sources write directly with no git staging, so omit branch + commitMessage. Returns { ok: true }.",
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         path: z.string().describe('File path within the source.'),
         content: z.string().describe('Full file content to write.'),
@@ -235,13 +259,13 @@ export function registerSourceTools(server: ToolHost): void {
           .string()
           .optional()
           .describe(
-            'Branch to commit to. Required for GitHub sources; omit for filesystem + Notion (ignored).'
+            'Branch to commit to. Required for GitHub + GitLab sources; omit for filesystem + Notion (ignored).'
           ),
         commitMessage: z
           .string()
           .optional()
           .describe(
-            'Commit message. Required for GitHub sources; omit for filesystem + Notion (ignored).'
+            'Commit message. Required for GitHub + GitLab sources; omit for filesystem + Notion (ignored).'
           ),
       },
     },
@@ -260,12 +284,12 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Surgically edit a file in any source: replace an exact `oldString` with `newString`. Prefer this over the built-in Edit for a covered path — like write_file it invalidates the shared read cache after writing (a bypassing edit leaves grep/find_symbol serving stale, pre-edit content), and it keeps the whole read->edit->write cycle in-toolchain across local, GitHub, and Notion sources. `oldString` must match exactly once unless `replaceAll` is set — include enough surrounding context to make it unique. GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly, so omit branch + commitMessage. Returns { ok: true, replacements }.',
+        'Surgically edit a file in any source: replace an exact `oldString` with `newString`. Prefer this over the built-in Edit for a covered path — like write_file it invalidates the shared read cache after writing (a bypassing edit leaves grep/find_symbol serving stale, pre-edit content), and it keeps the whole read->edit->write cycle in-toolchain across local, GitHub, GitLab, and Notion sources. `oldString` must match exactly once unless `replaceAll` is set — include enough surrounding context to make it unique. GitHub + GitLab commit to `branch` (branch + commitMessage required there); filesystem + Notion write directly, so omit branch + commitMessage. Returns { ok: true, replacements }.',
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         path: z.string().describe('File path within the source.'),
         oldString: z
@@ -276,13 +300,13 @@ export function registerSourceTools(server: ToolHost): void {
           .string()
           .optional()
           .describe(
-            'Branch to commit to. Required for GitHub sources; omit for filesystem + Notion (ignored).'
+            'Branch to commit to. Required for GitHub + GitLab sources; omit for filesystem + Notion (ignored).'
           ),
         commitMessage: z
           .string()
           .optional()
           .describe(
-            'Commit message. Required for GitHub sources; omit for filesystem + Notion (ignored).'
+            'Commit message. Required for GitHub + GitLab sources; omit for filesystem + Notion (ignored).'
           ),
         replaceAll: z
           .boolean()
@@ -317,12 +341,12 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Apply a LIST of exact-string edits to one file ATOMICALLY: all land or none do (if any oldString is absent or non-unique, the whole call throws and nothing is written). Prefer this over several edit_file calls when a file needs multiple changes — one read/write, no half-applied state. Each edit is an { oldString, newString, replaceAll? } (oldString unique unless replaceAll). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements } — the total across all edits.',
+        'Apply a LIST of exact-string edits to one file ATOMICALLY: all land or none do (if any oldString is absent or non-unique, the whole call throws and nothing is written). Prefer this over several edit_file calls when a file needs multiple changes — one read/write, no half-applied state. Each edit is an { oldString, newString, replaceAll? } (oldString unique unless replaceAll). GitHub + GitLab commit to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements } — the total across all edits.',
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         path: z.string().describe('File path within the source.'),
         edits: z
@@ -344,13 +368,13 @@ export function registerSourceTools(server: ToolHost): void {
           .string()
           .optional()
           .describe(
-            'Branch to commit to. Required for GitHub sources; omit for filesystem + Notion (ignored).'
+            'Branch to commit to. Required for GitHub + GitLab sources; omit for filesystem + Notion (ignored).'
           ),
         commitMessage: z
           .string()
           .optional()
           .describe(
-            'Commit message. Required for GitHub sources; omit for filesystem + Notion (ignored).'
+            'Commit message. Required for GitHub + GitLab sources; omit for filesystem + Notion (ignored).'
           ),
       },
     },
@@ -379,12 +403,12 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Insert `text` immediately before or after the UNIQUE occurrence of `anchor` in a file — an anchored insert with no surrounding rewrite. Throws if `anchor` or `text` is empty, or `anchor` is absent or matches more than once (add context to make it unique). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements }.',
+        'Insert `text` immediately before or after the UNIQUE occurrence of `anchor` in a file — an anchored insert with no surrounding rewrite. Throws if `anchor` or `text` is empty, or `anchor` is absent or matches more than once (add context to make it unique). GitHub + GitLab commit to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements }.',
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         path: z.string().describe('File path within the source.'),
         anchor: z.string().describe('Unique text to anchor the insert to.'),
@@ -394,12 +418,14 @@ export function registerSourceTools(server: ToolHost): void {
           .string()
           .optional()
           .describe(
-            'Branch to commit to. Required for GitHub sources; omit for filesystem + Notion.'
+            'Branch to commit to. Required for GitHub + GitLab sources; omit for filesystem + Notion.'
           ),
         commitMessage: z
           .string()
           .optional()
-          .describe('Commit message. Required for GitHub sources; omit for filesystem + Notion.'),
+          .describe(
+            'Commit message. Required for GitHub + GitLab sources; omit for filesystem + Notion.'
+          ),
       },
     },
     async ({ sourceUrl, path, anchor, text, position, branch, commitMessage }) => {
@@ -429,12 +455,12 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Remove the UNIQUE occurrence of `block` from a file. Throws if `block` is empty, absent, or matches more than once (add surrounding context to make it unique). GitHub commits to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements }.',
+        'Remove the UNIQUE occurrence of `block` from a file. Throws if `block` is empty, absent, or matches more than once (add surrounding context to make it unique). GitHub + GitLab commit to `branch` (branch + commitMessage required there); filesystem + Notion write directly. Returns { ok: true, replacements }.',
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         path: z.string().describe('File path within the source.'),
         block: z.string().describe('The exact block to remove (must be unique in the file).'),
@@ -442,12 +468,14 @@ export function registerSourceTools(server: ToolHost): void {
           .string()
           .optional()
           .describe(
-            'Branch to commit to. Required for GitHub sources; omit for filesystem + Notion.'
+            'Branch to commit to. Required for GitHub + GitLab sources; omit for filesystem + Notion.'
           ),
         commitMessage: z
           .string()
           .optional()
-          .describe('Commit message. Required for GitHub sources; omit for filesystem + Notion.'),
+          .describe(
+            'Commit message. Required for GitHub + GitLab sources; omit for filesystem + Notion.'
+          ),
       },
     },
     async ({ sourceUrl, path, block, branch, commitMessage }) => {
@@ -479,12 +507,12 @@ export function registerSourceTools(server: ToolHost): void {
         openWorldHint: true,
       },
       description:
-        'Commit MULTIPLE files together on `branch` in ONE operation — the multi-file twin of write_file. Prefer this over several write_file calls when a change spans files: on GitHub it is a single ATOMIC commit (blobs → tree → commit → ref move; the ref advances only after every step succeeds, so a failure leaves no partial state) instead of N separate commits; on a local git repo it writes the files then stages + commits them (best-effort — a git failure throws but the already-written files are NOT rolled back, so inspect the working tree on error); on Notion it degrades to sequential writes. Like the other writers it drops each written file from the shared read cache. `files` must be non-empty. GitHub requires `branch` + `commitMessage`; a local git repo uses `branch` to create/advance; a non-git path or Notion writes directly. Returns { ok: true, files } — the count committed.',
+        'Commit MULTIPLE files together on `branch` in ONE operation — the multi-file twin of write_file. Prefer this over several write_file calls when a change spans files: on GitHub it is a single ATOMIC commit (blobs → tree → commit → ref move; the ref advances only after every step succeeds, so a failure leaves no partial state) instead of N separate commits; on GitLab it is likewise ONE atomic commit (the commits API applies every file action or none); on a local git repo it writes the files then stages + commits them (best-effort — a git failure throws but the already-written files are NOT rolled back, so inspect the working tree on error); on Notion it degrades to sequential writes. Like the other writers it drops each written file from the shared read cache. `files` must be non-empty. GitHub + GitLab require `branch` + `commitMessage`; a local git repo uses `branch` to create/advance; a non-git path or Notion writes directly. Returns { ok: true, files } — the count committed.',
       inputSchema: {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         files: z
           .array(
@@ -499,13 +527,13 @@ export function registerSourceTools(server: ToolHost): void {
           .string()
           .optional()
           .describe(
-            'Branch to commit to. Required for GitHub sources; used by a local git repo to create/advance the branch; ignored for Notion + non-git paths.'
+            'Branch to commit to. Required for GitHub + GitLab sources; used by a local git repo to create/advance the branch; ignored for Notion + non-git paths.'
           ),
         commitMessage: z
           .string()
           .optional()
           .describe(
-            'Commit message. Required for GitHub sources; used by a local git repo; ignored for Notion + non-git paths.'
+            'Commit message. Required for GitHub + GitLab sources; used by a local git repo; ignored for Notion + non-git paths.'
           ),
       },
     },
@@ -524,8 +552,8 @@ export function registerSourceTools(server: ToolHost): void {
   // target). Once forked, the fork is the **working URL** — the workspace we
   // actually read, write, branch, and commit on. The source repo is never
   // written directly; it only ever receives a pull request from the fork. So an
-  // agent can change a repo it does NOT own hermetically. GitHub only (forks /
-  // PRs are a GitHub concept).
+  // agent can change a repo it does NOT own hermetically. GitHub (forks /
+  // PRs) and GitLab (forks / merge requests).
   // -------------------------------------------------------------------------
   server.registerTool(
     'ensure_fork',
@@ -537,11 +565,13 @@ export function registerSourceTools(server: ToolHost): void {
         openWorldHint: true,
       },
       description:
-        "Fork a GitHub repo into the configured fork org and return the **working URL** — the fork that becomes your workspace for this repo. Idempotent: returns the existing fork if one is already there. The repo's source URL stays its identity and the eventual pull-request target; everything you actually do — read, write, branch, commit — happens on the working URL, so a repo you do NOT own is never written directly. GitHub only. Returns { workingUrl }.",
+        "Fork a GitHub repo or GitLab project into the configured fork org / namespace and return the **working URL** — the fork that becomes your workspace for this repo. Idempotent: returns the existing fork if one is already there. The repo's source URL stays its identity and the eventual pull-request target; everything you actually do — read, write, branch, commit — happens on the working URL, so a repo you do NOT own is never written directly. GitHub forks into SOURCE_FORK_ORG; GitLab into GITLAB_FORK_NAMESPACE (or your personal namespace) and waits for the fork import to finish. Returns { workingUrl }.",
       inputSchema: {
         sourceUrl: z
           .string()
-          .describe('The GitHub repo URL to fork — the source/identity of the repo.'),
+          .describe(
+            'The GitHub repo / GitLab project URL to fork — the source/identity of the repo.'
+          ),
       },
     },
     async ({ sourceUrl }) => {
@@ -562,7 +592,7 @@ export function registerSourceTools(server: ToolHost): void {
         openWorldHint: true,
       },
       description:
-        'Ensure a branch exists on a GitHub repo — created off the default branch if missing, a no-op if it already exists. Pass the **working URL** (the fork from ensure_fork) — that is what you branch and commit on. GitHub only. Returns { ok: true, branch }.',
+        'Ensure a branch exists on a GitHub repo or GitLab project — created off the default branch if missing, a no-op if it already exists. Pass the **working URL** (the fork from ensure_fork) — that is what you branch and commit on. Returns { ok: true, branch }.',
       inputSchema: {
         workingUrl: z
           .string()
@@ -583,7 +613,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description:
-        "Open a pull request on a GitHub repo and return its URL. Addressed by the repo's **source URL** (the PR target); the change lives on a `branch` on the **working URL** (the fork). The cross-repo head (`<fork-owner>:<branch>`) is built for you from the working URL, so you never hand-build it. For a same-repo change (you own the repo), pass the same URL for both source and working. GitHub only. Returns { prUrl }.",
+        "Open a pull request on a GitHub repo (or a merge request on a GitLab project) and return its URL. Addressed by the repo's **source URL** (the PR target); the change lives on a `branch` on the **working URL** (the fork). The cross-repo head is built for you from the working URL, so you never hand-build it. For a same-repo change (you own the repo), pass the same URL for both source and working. On GitLab the fork must be on the same instance, and an already-open MR from the same fork + branch is returned rather than duplicated. Returns { prUrl }.",
       inputSchema: {
         sourceUrl: z
           .string()
@@ -601,8 +631,8 @@ export function registerSourceTools(server: ToolHost): void {
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       // Same repo for source + working → a same-repo PR (head is just the
-      // branch); a real fork → a cross-repo head `<fork-owner>:<branch>`.
-      const head = workingUrl === sourceUrl ? branch : `${ghOwner(workingUrl)}:${branch}`;
+      // branch); a real fork → a cross-repo head built by `forkHead`.
+      const head = workingUrl === sourceUrl ? branch : forkHead(sourceUrl, workingUrl, branch);
       const prUrl = await adapter.openPullRequest(env, sourceUrl, head, base, title, body);
       return { content: [{ type: 'text', text: jsonText({ prUrl }) }] };
     }
@@ -621,7 +651,7 @@ export function registerSourceTools(server: ToolHost): void {
         sourceUrl: z
           .string()
           .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), or Notion (https://www.notion.so/<id>).'
+            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
           ),
         symbol: z.string().describe('Symbol name to look up in the code graph.'),
         ref: z

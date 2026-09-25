@@ -29,7 +29,7 @@ Rule of thumb: **the reasoning, the decomposition, and the decision of what to h
 The same tools work uniformly across:
 
 - **Local repos / files** — absolute path or `file://` (e.g. `/Users/you/project`)
-- **Git hosts** — `https://github.com/owner/repo` (more adapters land over time)
+- **Git hosts** — `https://github.com/owner/repo`, or a GitLab project `https://gitlab.com/group/project` (nested groups too; a self-hosted instance must be listed in `GITLAB_HOSTS`; `open_pull_request` opens a merge request there)
 - **Notion** — `https://www.notion.so/<id>` (pages read as a file tree; databases act as work-tracker boards)
 
 Reads are cached and tree-sitter symbol-indexed via `@verevoir/context` and shared across the whole session, so reading a file also warms it for later search. Native reads bypass that cache and its freshness tracking — and can't see Notion at all.
