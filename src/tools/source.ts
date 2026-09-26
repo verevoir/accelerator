@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ToolHost } from '../permissions.js';
-import { grepSource, warmSource, wrapWithCache } from '@verevoir/context';
+import { contextStore, grepSource, warmSource, wrapWithCache } from '@verevoir/context';
 import { findSymbols } from '@verevoir/context/code';
 import { pickSourceAdapter, resolveSourceEnv } from '../router.js';
 import {
@@ -49,6 +49,39 @@ export function ghOwner(repoUrl: string): string {
 }
 
 export function registerSourceTools(server: ToolHost): void {
+  server.registerTool(
+    'refresh_source',
+    {
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      description:
+        'Clear cached content, symbols, and graph edges for one source and ref so subsequent reads and searches see out-of-band changes. Omit ref to clear only the default-ref cache; other refs and sources are preserved. This changes no source files and makes no backend requests.',
+      inputSchema: {
+        sourceUrl: z
+          .string()
+          .min(1)
+          .describe('Source cache identity: a local path/file:// URL or remote source URL.'),
+        ref: z
+          .string()
+          .optional()
+          .describe(
+            'Clear only this cached git ref. Omit for the default-ref cache, not all refs.'
+          ),
+      },
+    },
+    async ({ sourceUrl, ref }) => {
+      sourceUrl = normalizeSourceUrl(sourceUrl);
+      contextStore.invalidateVersion(sourceUrl, ref ?? '');
+      return {
+        content: [{ type: 'text', text: jsonText({ ok: true, sourceUrl, ref: ref ?? '' }) }],
+      };
+    }
+  );
+
   // -------------------------------------------------------------------------
   // read_file
   // -------------------------------------------------------------------------

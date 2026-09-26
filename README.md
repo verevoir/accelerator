@@ -113,10 +113,10 @@ same variable for its own GitHub client), and where `gh` is absent — the runti
 container image has no `gh` — the call fails naming `GITHUB_TOKEN` rather than
 surfacing an exec error from the middle of a tool call.
 
-## Tools it registers (22)
+## Tools it registers
 
 **Source** (cached + tree-sitter indexed via `@verevoir/context`): `read_file`,
-`list_files`, `get_repo_tree`, `grep`, `find_symbol`, `code_graph`, `write_file`,
+`list_files`, `get_repo_tree`, `grep`, `find_symbol`, `code_graph`, `refresh_source`, `write_file`,
 `edit_file`, `multi_edit`, `insert`, `delete_block`, `commit_files`, `ensure_fork`,
 `ensure_branch`, `open_pull_request`.
 **Work tracker** (via `@verevoir/workflows`): `list_cards`, `get_card`,
@@ -161,3 +161,9 @@ serving many sessions that share one warm cache; `PORT` / `HOST`),
 ## Licence
 
 Apache-2.0.
+
+Use `refresh_source({ sourceUrl, ref? })` after out-of-band changes such as a
+submodule update. It drops cached content, symbols, and graph edges for exactly
+that source and ref; omitting `ref` clears only the default-ref cache. Other
+sources and refs stay warm. Refresh is idempotent, requires no backend credentials,
+and changes no source files, so it is available in the `read` permission class.
