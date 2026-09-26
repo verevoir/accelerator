@@ -76,8 +76,12 @@ export function buildMultiSourceNeighbourhood(
   symbol: string
 ): MultiSourceNeighbourhood {
   const allSymbols = findSymbols('', { sources }, { maxResults: Infinity, store });
+  const namesBySource = new Map<string, Set<string>>();
   const locationsByName = new Map<string, MultiSourceNeighbourhood['definitions']>();
   for (const hit of allSymbols) {
+    const names = namesBySource.get(hit.sourceId) ?? new Set<string>();
+    names.add(hit.name);
+    namesBySource.set(hit.sourceId, names);
     const locations = locationsByName.get(hit.name) ?? [];
     locations.push({
       sourceId: hit.sourceId,
@@ -99,7 +103,10 @@ export function buildMultiSourceNeighbourhood(
       const edges = edgesForItem(store, sourceId, version, file);
       if (!edges) continue;
       for (const call of edges.calls) {
-        if (call.to === symbol && (call.from === null || locationsByName.has(call.from))) {
+        if (
+          call.to === symbol &&
+          (call.from === null || namesBySource.get(sourceId)?.has(call.from))
+        ) {
           const key = JSON.stringify([sourceId, call.from, file, call.line]);
           if (!seenCallers.has(key)) {
             seenCallers.add(key);

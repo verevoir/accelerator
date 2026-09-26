@@ -132,12 +132,15 @@ Prefer these over built-in filesystem/shell tools so the shared read cache +
 symbol index stay correct across a session.
 
 `grep`, `find_symbol`, and `code_graph` accept either `sourceUrl` or a nonempty
-`sourceUrls` list. For example,
+`sourceUrls` list of at most 100 entries (before deduplication). This bounds
+aggregate work to 100 per-source walk budgets. For example,
 `code_graph({ sourceUrls: ["/repos/core", "/repos/schema"], symbol: "runSync" })`
 resolves named calls against definitions across both repositories. Each source
 retains its own tree budget and cache; local and GitLab sources can be mixed.
 Grep and symbol hits include `sourceId`; multi-source graph locations and callees
-are labelled by source. Graph resolution remains approximate and name-based.
+are labelled by source. Named callers must be defined in their own source;
+callees resolve across all selected sources. Graph resolution remains approximate
+and name-based.
 Duplicate sources are searched once, in first-occurrence order. Grep's
 `maxResults` is a total budget across sources (default 50); `find_symbol` retains
 its total 50-hit limit. Source-level routing or enumeration failures fail the call

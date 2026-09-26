@@ -12,7 +12,7 @@ import {
   commitFilesSource,
 } from '../mutate.js';
 import { queryCodeGraph, queryMultiSourceCodeGraph } from '../graph.js';
-import { resolveSourceUrls, type SourceSelection } from '../source-selection.js';
+import { MAX_SOURCES, resolveSourceUrls, type SourceSelection } from '../source-selection.js';
 import { jsonText } from '../result.js';
 import { fileURLToPath } from 'node:url';
 import { isGitlabUrl, parseGitlabProjectUrl } from '@verevoir/sources/gitlab';
@@ -79,14 +79,15 @@ const sourceSelectionSchema = {
     .min(1)
     .optional()
     .describe(
-      'One local path, file URL, GitHub/GitLab repo, or Notion source. Provide this or sourceUrls.'
+      'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or an HTTPS self-hosted host listed in GITLAB_HOSTS), or Notion (https://www.notion.so/<id>). Provide this or sourceUrls.'
     ),
   sourceUrls: z
     .array(z.string().min(1))
     .min(1)
+    .max(MAX_SOURCES)
     .optional()
     .describe(
-      'Sources to search together, in order. Each retains its own cache and tree budget. Provide this or sourceUrl.'
+      `Up to ${MAX_SOURCES} sources to search together, in order: local paths (/abs/path or file://...), GitHub repos (https://github.com/owner/repo), GitLab projects (https://gitlab.com/group/project, or HTTPS self-hosted hosts listed in GITLAB_HOSTS), or Notion (https://www.notion.so/<id>). Each retains its own cache and tree budget; the count limit bounds aggregate work. Provide this or sourceUrl.`
     ),
 };
 

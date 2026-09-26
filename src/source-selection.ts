@@ -1,3 +1,6 @@
+/** Bound aggregate work to at most 100 independent per-source walk budgets. */
+export const MAX_SOURCES = 100;
+
 export interface SourceSelection {
   sourceUrl?: string;
   sourceUrls?: string[];
@@ -15,6 +18,9 @@ export function resolveSourceUrls({ sourceUrl, sourceUrls }: SourceSelection): s
     urls.some((url) => typeof url !== 'string' || url.trim().length === 0)
   ) {
     throw new Error('Sources must be a nonempty list of nonblank source URLs.');
+  }
+  if (urls.length > MAX_SOURCES) {
+    throw new Error(`Select at most ${MAX_SOURCES} sources per call.`);
   }
   return [...new Set(urls)];
 }

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,7 +9,7 @@ import type { SourceAdapter } from '@verevoir/sources';
 import type { ToolHost } from '../src/permissions.js';
 import { registerSourceTools } from '../src/tools/source.js';
 import { buildMultiSourceNeighbourhood } from '../src/graph.js';
-import { resolveSourceUrls } from '../src/source-selection.js';
+import { MAX_SOURCES, resolveSourceUrls } from '../src/source-selection.js';
 import { pickSourceAdapter } from '../src/router.js';
 
 vi.mock('../src/router.js', async (importOriginal) => {
@@ -33,6 +34,31 @@ const CALLEE = 'export function threeWayMerge() { return 42; }';
 describe('source selection', () => {
   it('deduplicates sources without reordering them', () => {
     expect(resolveSourceUrls({ sourceUrls: ['/b', '/a', '/b'] })).toEqual(['/b', '/a']);
+  });
+
+  it.each(['grep', 'find_symbol', 'code_graph'])(
+    'bounds sourceUrls at the MCP schema for %s',
+    (toolName) => {
+      let sourceUrlsSchema: z.ZodType | undefined;
+      registerSourceTools({
+        registerTool(name: string, config: { inputSchema: Record<string, z.ZodType> }) {
+          if (name === toolName) sourceUrlsSchema = config.inputSchema.sourceUrls;
+        },
+      } as unknown as ToolHost);
+      expect(sourceUrlsSchema?.safeParse(Array(MAX_SOURCES).fill('/repo')).success).toBe(true);
+      expect(sourceUrlsSchema?.safeParse(Array(MAX_SOURCES + 1).fill('/repo')).success).toBe(false);
+    }
+  );
+
+  it('accepts exactly the source limit', () => {
+    const sourceUrls = Array.from({ length: MAX_SOURCES }, (_, i) => `/repo-${i}`);
+    expect(resolveSourceUrls({ sourceUrls })).toEqual(sourceUrls);
+  });
+
+  it('rejects source counts over the limit before deduplication', () => {
+    expect(() => resolveSourceUrls({ sourceUrls: Array(MAX_SOURCES + 1).fill('/repo') })).toThrow(
+      `at most ${MAX_SOURCES} sources`
+    );
   });
 
   it('preserves a single source', () => {
@@ -154,6 +180,39 @@ describe('MCP searches across independent repositories', () => {
     ).toEqual([core, schema]);
   });
 
+  it('stops before routing the third source when the grep budget is exhausted', async () => {
+    const untouched = 'https://gitlab.com/group/untouched';
+    const actual = await vi.importActual<typeof import('../src/router.js')>('../src/router.js');
+    vi.mocked(pickSourceAdapter).mockImplementation(async (url) => {
+      if (url === untouched) throw new Error('third source must remain untouched');
+      return actual.pickSourceAdapter(url);
+    });
+    const result = await tools.grep({
+      sourceUrls: [core, schema, untouched],
+      pattern: 'export function',
+      maxResults: 2,
+    });
+    expect(
+      JSON.parse(result.content[0].text).map((hit: { sourceId: string }) => hit.sourceId)
+    ).toEqual([core, schema]);
+    expect(pickSourceAdapter).not.toHaveBeenCalledWith(untouched);
+  });
+
+  it.each(['grep', 'find_symbol', 'code_graph'])(
+    'rejects oversized selections before routing in %s',
+    async (name) => {
+      await expect(
+        tools[name]({
+          sourceUrls: Array(MAX_SOURCES + 1).fill(core),
+          name: '',
+          symbol: 'runSync',
+          pattern: 'export',
+        })
+      ).rejects.toThrow(`at most ${MAX_SOURCES} sources`);
+      expect(pickSourceAdapter).not.toHaveBeenCalled();
+    }
+  );
+
   it('does not repeat results for duplicate sources or equivalent file URLs', async () => {
     const result = await tools.find_symbol({
       sourceUrls: [core, pathToFileURL(core).href, core],
@@ -271,6 +330,27 @@ describe('combined graph identity', () => {
         { sourceId: '/b', file: 'index.ts' },
       ],
     });
+  });
+
+  it('does not borrow a named caller definition from another source', () => {
+    const store = createContextStore();
+    const key = { sourceId: '/caller', version: '', itemId: 'index.ts' };
+    store.setContent(key, CALLEE);
+    store.setEdges(key, {
+      calls: [
+        { from: 'runSync', to: 'threeWayMerge', line: 3 },
+        { from: null, to: 'threeWayMerge', line: 4 },
+      ],
+      imports: [],
+    });
+    store.setContent(
+      { sourceId: '/other', version: '', itemId: 'index.ts' },
+      'export function runSync() {}'
+    );
+    const sources = ['/caller', '/other'].map((sourceId) => ({ sourceId, version: '' }));
+    expect(buildMultiSourceNeighbourhood(store, sources, 'threeWayMerge').callers).toEqual([
+      { sourceId: '/caller', from: '<top-level>', file: 'index.ts', line: 4 },
+    ]);
   });
 
   it('labels every possible callee source for ambiguous names', () => {
