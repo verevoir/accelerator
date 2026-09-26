@@ -48,7 +48,7 @@ export function buildNeighbourhood(
   const scope = { sources: [{ sourceId: sourceUrl, version }] };
 
   // 1. Full symbol set for this source → definedNames + location map.
-  const allSymbols = findSymbols('', scope, { maxResults: 5000, store });
+  const allSymbols = findSymbols('', scope, { maxResults: Infinity, store });
   const definedNames = new Set(allSymbols.map((h) => h.name));
   const locationsByName = new Map<string, SymbolLocation[]>();
   for (const hit of allSymbols) {
