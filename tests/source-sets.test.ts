@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, realpathSync, symlinkSync, writeFileSync, rmSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import * as router from '../src/router.js';
 import type { ToolHost } from '../src/permissions.js';
 import { resolveSourceUrls } from '../src/source-selection.js';
 import { registerSourceTools } from '../src/tools/source.js';
@@ -43,6 +44,7 @@ beforeEach(() => {
   vi.mocked(resolveManifest).mockReturnValue(manifest);
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.mocked(resolveManifest).mockReset();
   rmSync(root, { recursive: true, force: true });
@@ -195,3 +197,36 @@ it.each(['repositories/core', 'repositories/*'])(
     expect(resolveSourceUrls({ sourceSet: 'literal' }, nestedManifest)).toEqual([nestedCore]);
   }
 );
+
+function boundedSet(kind: string, count: number): string[] {
+  const sources = Array.from({ length: count }, (_, index) =>
+    kind === 'explicit'
+      ? `https://gitlab.com/group/repo-${index}`
+      : join(root, 'bounded', `repo-${String(index).padStart(3, '0')}`)
+  );
+  if (kind === 'wildcard') {
+    for (const source of sources) mkdirSync(source, { recursive: true });
+  }
+  manifest.manifest.sourceSets = { bounded: kind === 'explicit' ? sources : 'bounded/*' };
+  return sources;
+}
+
+it.each(['explicit', 'wildcard'])('accepts exactly 100 sources in a %s set', (kind) => {
+  const sources = boundedSet(kind, 100);
+  expect(resolveSourceUrls({ sourceSet: 'bounded' }, manifest)).toEqual(sources);
+});
+
+it.each(
+  ['explicit', 'wildcard'].flatMap((kind) =>
+    ['grep', 'find_symbol', 'code_graph'].map((tool) => [kind, tool])
+  )
+)('rejects a 101-source %s set before %s routes any source', async (kind, tool) => {
+  boundedSet(kind, 101);
+  const adapter = vi.spyOn(router, 'pickSourceAdapter').mockImplementation(() => {
+    throw new Error('oversized sets must not route sources');
+  });
+  await expect(
+    tools[tool]({ sourceSet: 'bounded', pattern: 'needle', name: 'needle', symbol: 'needle' })
+  ).rejects.toThrow('Select at most 100 sources per call.');
+  expect(adapter).not.toHaveBeenCalled();
+});
