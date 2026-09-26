@@ -40,6 +40,7 @@ export const TOOL_CLASS_NAMES: readonly ToolClass[] = [
 export const TOOL_CLASSES: Readonly<Record<string, ToolClass>> = {
   // read — readOnlyHint:true; safe to auto-allow.
   read_file: 'read',
+  refresh_source: 'read',
   list_files: 'read',
   get_repo_tree: 'read',
   grep: 'read',
