@@ -131,34 +131,47 @@ describe('fork-isolated write-flow tools (STDIO-409)', () => {
 // These operations remain unsupported by the real local adapter. At the tool
 // boundary, aliases must still resolve before adapter routing and same-repo detection.
 describe('canonical source arguments at the git adapter boundary', () => {
-  it('normalizes fork, branch, commit and both pull-request URLs', async () => {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'git-alias-')));
-    const alias = join(dir, 'alias');
-    symlinkSync(dir, alias);
-    const url = pathToFileURL(alias).href + '/';
-    const a = { ...adapter(), commitFiles: vi.fn(async () => undefined) };
-    vi.mocked(pickSourceAdapter).mockResolvedValue(a as never);
-    const h = harness();
-    try {
-      await h.ensure_fork({ sourceUrl: url });
-      expect(a.ensureFork).toHaveBeenCalledWith(env, dir);
-      await h.ensure_branch({ workingUrl: url, branch: 'feature' });
-      expect(a.ensureBranch).toHaveBeenCalledWith(env, dir, 'feature');
-      const files = [{ path: 'entry.ts', content: 'new content' }];
-      await h.commit_files({ sourceUrl: url, files, branch: 'feature', commitMessage: 'update' });
-      expect(a.commitFiles).toHaveBeenCalledWith(env, dir, 'feature', files, 'update');
-      await h.open_pull_request({
-        sourceUrl: url,
-        workingUrl: dir + '/',
-        branch: 'feature',
-        base: 'main',
-        title: 't',
-        body: 'b',
-      });
-      expect(a.openPullRequest).toHaveBeenCalledWith(env, dir, 'feature', 'main', 't', 'b');
-      expect(vi.mocked(pickSourceAdapter).mock.calls).toEqual([[dir], [dir], [dir], [dir]]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+  const files = [{ path: 'entry.ts', content: 'new content' }];
+  it.each([
+    { tool: 'ensure_fork', method: 'ensureFork', args: {}, expected: [] },
+    {
+      tool: 'ensure_branch',
+      method: 'ensureBranch',
+      args: { branch: 'feature' },
+      expected: ['feature'],
+    },
+    {
+      tool: 'commit_files',
+      method: 'commitFiles',
+      args: { files, branch: 'feature', commitMessage: 'update' },
+      expected: ['feature', files, 'update'],
+    },
+    {
+      tool: 'open_pull_request',
+      method: 'openPullRequest',
+      args: { branch: 'feature', base: 'main', title: 't', body: 'b' },
+      expected: ['feature', 'main', 't', 'b'],
+    },
+  ] as const)(
+    '$tool routes canonical aliases to the adapter',
+    async ({ tool, method, args, expected }) => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'git-alias-')));
+      const alias = join(dir, 'alias');
+      symlinkSync(dir, alias);
+      const url = pathToFileURL(alias).href + '/';
+      const a = { ...adapter(), commitFiles: vi.fn(async () => undefined) };
+      vi.mocked(pickSourceAdapter).mockResolvedValue(a as never);
+      try {
+        await harness()[tool]({
+          sourceUrl: url,
+          workingUrl: tool === 'open_pull_request' ? dir + '/' : url,
+          ...args,
+        });
+        expect(a[method]).toHaveBeenCalledWith(env, dir, ...expected);
+        expect(vi.mocked(pickSourceAdapter).mock.calls).toEqual([[dir]]);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
-  });
+  );
 });
