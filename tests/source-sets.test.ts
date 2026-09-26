@@ -181,3 +181,17 @@ it('rejects remote glob patterns', () => {
   manifest.manifest.sourceSets = { remote: 'https://gitlab.com/group/*' };
   expect(() => resolveSourceUrls({ sourceSet: 'remote' }, manifest)).toThrow('Remote source globs');
 });
+
+it.each(['repositories/core', 'repositories/*'])(
+  'treats the manifest directory literally when resolving %s',
+  (entry) => {
+    const base = join(root, 'workspace[1]');
+    const nestedCore = join(base, 'repositories/core');
+    mkdirSync(nestedCore, { recursive: true });
+    const nestedManifest = {
+      sourcePath: join(base, 'verevoir-mcp.json'),
+      manifest: { sourceSets: { literal: entry } },
+    };
+    expect(resolveSourceUrls({ sourceSet: 'literal' }, nestedManifest)).toEqual([nestedCore]);
+  }
+);

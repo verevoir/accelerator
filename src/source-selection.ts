@@ -46,11 +46,15 @@ function expandSetEntry(entry: string, base: string): string[] {
     if (entry.includes('*')) throw new Error('Remote source globs are not supported.');
     return [entry];
   }
-  const path = entry.startsWith('file://') ? fileURLToPath(entry) : resolve(base, entry);
-  if (/[?*\[\]{}]/.test(path)) {
-    if (!path.endsWith('/*') || /[?*\[\]{}]/.test(path.slice(0, -2))) {
+  const localEntry = entry.startsWith('file://') ? fileURLToPath(entry) : entry;
+  const hasGlob = /[?*\[\]{}]/.test(localEntry);
+  if (hasGlob) {
+    if (!localEntry.endsWith('/*') || /[?*\[\]{}]/.test(localEntry.slice(0, -2))) {
       throw new Error('Only a final /* directory glob is supported in source sets.');
     }
+  }
+  const path = resolve(base, localEntry);
+  if (hasGlob) {
     const directory = path.slice(0, -2) || '/';
     const matches = readdirSync(directory, { withFileTypes: true })
       .filter(
