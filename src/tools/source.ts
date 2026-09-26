@@ -112,7 +112,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Fetch the full file tree for a source (local path, GitHub repo, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag.',
+        'Fetch the full file tree for a source (local path, GitHub repo, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag. A truncated tree appends a second text content block warning that results may be incomplete.',
       inputSchema: {
         sourceUrl: z
           .string()
@@ -139,7 +139,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Search file contents for a pattern across an entire source on demand. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context.',
+        'Search file contents for a pattern across an entire source on demand. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context. A truncated tree appends a second text content block warning that results may be incomplete.',
       inputSchema: {
         sourceUrl: z
           .string()
@@ -178,7 +178,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Find where a named function, class, method, interface, type, or enum is defined — scans the whole source on demand, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range.',
+        'Find where a named function, class, method, interface, type, or enum is defined — scans the whole source on demand, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range. A truncated tree appends a second text content block warning that results may be incomplete.',
       inputSchema: {
         sourceUrl: z
           .string()
@@ -620,7 +620,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved to symbols defined in this source), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions.",
+        "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved to symbols defined in this source), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions. A truncated tree appends a second text content block warning that results may be incomplete.",
       inputSchema: {
         sourceUrl: z
           .string()

@@ -74,10 +74,14 @@ Native bash sits in its own shell class (never implied by write-local); grant it
 This is a policy + least-privilege + audit layer, NOT a sandbox — the real isolation boundary
 is running pi in a container. See docs/2026-07-24-pi-plugin-and-permissions.md.
 
+## Tree completeness
+
+Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
-/router, /audit, /metering, /result, /edit, /cache, /mutate, /http, /graph, /architecture, /manifest,
+/router, /audit, /metering, /result, /edit, /cache, /mutate, /http, /graph, /tree-warning, /architecture, /manifest,
 /instructions, /loop/evals, /loop/refine, /loop/search, /tools/source,
 /tools/workflow. @verevoir/capabilities imports these.
 
@@ -103,5 +107,3 @@ verevoir-card-sync, verevoir-audit-trace.
 Public on npm; also consumable via git-install (github:verevoir/accelerator#vX.Y.Z,
 built on install by its prepare script). @verevoir/capabilities depends on it via
 the git form, so the moat needs no registry.
-
-Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
