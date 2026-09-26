@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ToolHost } from '../src/permissions.js';
 import { registerSourceTools, normalizeSourceUrl } from '../src/tools/source.js';
+import { queryCodeGraph } from '../src/graph.js';
+import { invalidateWrittenFile } from '../src/cache.js';
 import { contextStore } from '@verevoir/context';
 
 type Handler = (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
@@ -29,6 +31,7 @@ describe('local source aliases', () => {
   });
   afterEach(() => {
     contextStore.invalidateVersion(root, '');
+    contextStore.invalidateVersion(root, 'feature');
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -97,6 +100,51 @@ describe('local source aliases', () => {
       'export function editedName() { return 1; }'
     );
   });
+  it.each([0, 1, 2])(
+    'exported graph query resolves alias %i without the tool handler',
+    async (index) => {
+      await handlers.find_symbol({ sourceUrl: root, name: 'originalName' });
+      expect(queryCodeGraph(aliases[index], '', 'originalName')).toContain('defined at entry.ts:1');
+    }
+  );
+  it.each([0, 1, 2])('exported invalidation through alias %i clears both ref scopes', (index) => {
+    for (const version of ['', 'feature']) {
+      const key = { sourceId: root, version, itemId: 'entry.ts' };
+      contextStore.setContent(key, 'stale');
+      contextStore.setSymbols(key, [{ name: 'stale', kind: 'function', startLine: 1, endLine: 1 }]);
+    }
+    invalidateWrittenFile(aliases[index], 'entry.ts', 'feature');
+    for (const version of ['', 'feature']) {
+      const key = { sourceId: root, version, itemId: 'entry.ts' };
+      expect(contextStore.getContent(key)).toBeUndefined();
+      expect(contextStore.getSymbols(key)).toBeUndefined();
+    }
+  });
+  it.each([
+    [
+      'multi_edit',
+      { edits: [{ oldString: 'originalName', newString: 'changedName' }] },
+      'export function changedName() { return 1; }',
+    ],
+    [
+      'insert',
+      { anchor: 'return', text: '/* inserted */ ', position: 'before' },
+      'export function originalName() { /* inserted */ return 1; }',
+    ],
+    ['delete_block', { block: ' return 1;' }, 'export function originalName() { }'],
+  ] as const)(
+    '%s accepts file URLs and refreshes the canonical read',
+    async (name, args, expected) => {
+      await handlers.read_file({ sourceUrl: root, path: 'entry.ts' });
+      await handlers[name]({
+        sourceUrl: aliases[1],
+        path: 'entry.ts',
+        ...args,
+      });
+      const result = await handlers.read_file({ sourceUrl: root, path: 'entry.ts' });
+      expect(JSON.parse(result.content[0].text).content).toBe(expected);
+    }
+  );
   it('preserves a lexical absolute path when the root is missing', () => {
     expect(normalizeSourceUrl(join(dir, 'missing') + '/')).toBe(join(dir, 'missing'));
   });

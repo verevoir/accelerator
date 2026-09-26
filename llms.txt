@@ -48,6 +48,11 @@ commit_files, ensure_fork, ensure_branch, open_pull_request. Work tracker: list_
 move_card, list_columns, list_comments, add_comment. Prefer these over built-in
 filesystem/shell so the shared cache + index stay correct.
 
+Local source paths, trailing-slash spellings, file:// URLs, and symlink aliases
+share one canonical cache identity across source tools. Existing roots use the
+real filesystem path; missing roots use an absolute lexical path until created.
+Other filesystem errors propagate. Remote source URLs are preserved unchanged.
+
 grep is lazy (via @verevoir/context 0.14): it reads the source in deterministic
 order and stops once maxResults matches are settled, warming only the files it
 reads — a small query no longer touches every file; the hits are identical to a
@@ -77,7 +82,7 @@ is running pi in a container. See docs/2026-07-24-pi-plugin-and-permissions.md.
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
-/router, /audit, /metering, /result, /edit, /cache, /mutate, /http, /graph, /architecture, /manifest,
+/source-url, /router, /audit, /metering, /result, /edit, /cache, /mutate, /http, /graph, /architecture, /manifest,
 /instructions, /loop/evals, /loop/refine, /loop/search, /tools/source,
 /tools/workflow. @verevoir/capabilities imports these.
 
@@ -103,10 +108,3 @@ verevoir-card-sync, verevoir-audit-trace.
 Public on npm; also consumable via git-install (github:verevoir/accelerator#vX.Y.Z,
 built on install by its prepare script). @verevoir/capabilities depends on it via
 the git form, so the moat needs no registry.
-
-Local source paths, trailing-slash spellings, file:// URLs, and symlink aliases
-share one canonical cache identity across source tools. Existing roots use the
-real filesystem path; missing roots use an absolute lexical path until created.
-Other filesystem errors propagate. Remote source URLs are preserved unchanged.
-
-- @verevoir/accelerator/source-url — normalizeSourceUrl, canonical local source identity.

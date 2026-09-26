@@ -126,10 +126,15 @@ surfacing an exec error from the middle of a tool call.
 Prefer these over built-in filesystem/shell tools so the shared read cache +
 symbol index stay correct across a session.
 
+Local source paths, trailing-slash spellings, file:// URLs, and symlink aliases
+share one canonical cache identity across source tools. Existing roots use the
+real filesystem path; missing roots use an absolute lexical path until created.
+Other filesystem errors propagate. Remote source URLs are preserved unchanged.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
-`/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
+`/source-url`, `/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
 `/graph`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
 `/loop/search`, `/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
 dependency direction is **capabilities → accelerator** (never the reverse), which
@@ -161,8 +166,3 @@ serving many sessions that share one warm cache; `PORT` / `HOST`),
 ## Licence
 
 Apache-2.0.
-
-Local source paths, trailing-slash spellings, file:// URLs, and symlink aliases
-share one canonical cache identity across source tools. Existing roots use the
-real filesystem path; missing roots use an absolute lexical path until created.
-Other filesystem errors propagate. Remote source URLs are preserved unchanged.
