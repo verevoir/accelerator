@@ -1,8 +1,12 @@
-import { beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, realpathSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import * as router from '../src/router.js';
 import { contextStore } from '@verevoir/context';
 import type { ToolHost } from '../src/permissions.js';
 import { registerSourceTools } from '../src/tools/source.js';
@@ -22,6 +26,7 @@ describe('refresh_source', () => {
     } as unknown as ToolHost);
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     contextStore.invalidateVersion(root, '');
     contextStore.invalidateVersion(root, 'feature');
     contextStore.invalidateVersion(root + '-other', '');
@@ -30,6 +35,36 @@ describe('refresh_source', () => {
   it('registers cache refresh in the public tool surface', () => {
     expect(typeof handlers.refresh_source).toBe('function');
   });
+  it.each([{ sourceUrl: '' }, {}])(
+    'rejects invalid source selection %j through MCP',
+    async (args) => {
+      const server = new McpServer({ name: 'refresh-test', version: '1.0.0' });
+      registerSourceTools(server);
+      const client = new Client({
+        name: 'refresh-test-client',
+        version: '1.0.0',
+      });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      try {
+        await server.connect(serverTransport);
+        await client.connect(clientTransport);
+        const result = await client.callTool({
+          name: 'refresh_source',
+          arguments: args,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content).toEqual([
+          {
+            type: 'text',
+            text: expect.stringMatching(/Input validation error:[\s\S]*sourceUrl/),
+          },
+        ]);
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    }
+  );
   it('makes out-of-band edits visible immediately to read_file', async () => {
     await handlers.read_file({ sourceUrl: root, path: 'entry.ts' });
     writeFileSync(join(root, 'entry.ts'), 'fresh content');
@@ -100,9 +135,17 @@ describe('refresh_source', () => {
     }
   );
   it('is an idempotent no-op for an uncached remote source without fetching credentials', async () => {
+    const credentials = vi.spyOn(router, 'resolveSourceEnv').mockImplementation(() => {
+      throw new Error('refresh must not resolve credentials');
+    });
+    const adapter = vi.spyOn(router, 'pickSourceAdapter').mockImplementation(() => {
+      throw new Error('refresh must not select a backend');
+    });
     const args = { sourceUrl: 'https://github.com/refresh-fixture/uncached', ref: 'feature' };
     const first = await handlers.refresh_source(args);
     const second = await handlers.refresh_source(args);
+    expect(credentials).not.toHaveBeenCalled();
+    expect(adapter).not.toHaveBeenCalled();
     expect([JSON.parse(first.content[0].text), JSON.parse(second.content[0].text)]).toEqual([
       { ok: true, ...args },
       { ok: true, ...args },
