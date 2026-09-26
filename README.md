@@ -161,3 +161,7 @@ serving many sessions that share one warm cache; `PORT` / `HOST`),
 ## Licence
 
 Apache-2.0.
+
+### Companion tool guidance
+
+Standalone accelerator instructions refer only to its commodity tool surface. A host composing accelerator with other servers can pass `createServer({ registeredTools: ['provision', 'find_governance'] })` using the exact tool names registered and visible to the client. Guidance is selected independently for each named companion tool; omitted tools receive no instructions. The option does not register tools or discover other MCP servers. Library callers can pass the same options as the second argument of `loadInstructions(path, options)`.
