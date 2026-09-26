@@ -1,3 +1,4 @@
+import { normalizeSourceUrl } from './source-url.js';
 import { contextStore } from '@verevoir/context';
 import { edgesForItem, findSymbols } from '@verevoir/context/code';
 import type { ContextStore } from '@verevoir/context';
@@ -177,6 +178,7 @@ export function renderNeighbourhood(nb: Neighbourhood, sourceUrl: string): strin
 // ---------------------------------------------------------------------------
 
 export function queryCodeGraph(sourceUrl: string, version: string, symbol: string): string {
+  sourceUrl = normalizeSourceUrl(sourceUrl);
   const nb = buildNeighbourhood(contextStore, sourceUrl, version, symbol);
   return renderNeighbourhood(nb, sourceUrl);
 }

@@ -9,7 +9,7 @@
 // covered by the unit suites — mutate/edit-tools/fork-flow.)
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { realpathSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerSourceTools } from '../src/tools/source.js';
@@ -115,7 +115,7 @@ describe('e2e: MCP source tools round-trip over a real fs fixture', () => {
     const fn = hits.find((h) => h.name === 'calculateTotal' && h.kind === 'function');
     expect(fn).toBeDefined();
     expect(fn!.itemId).toBe('src/a.ts');
-    expect(fn!.sourceId).toBe(dir);
+    expect(fn!.sourceId).toBe(realpathSync(dir));
     // Every SymbolHit field is populated to its contract.
     expect(fn!.startLine).toBe(1);
     expect(fn!.endLine).toBeGreaterThanOrEqual(fn!.startLine);

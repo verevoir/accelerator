@@ -1,3 +1,7 @@
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -121,5 +125,40 @@ describe('fork-isolated write-flow tools (STDIO-409)', () => {
     await expect(
       harness().ensure_fork({ sourceUrl: 'https://github.com/owner/repo' })
     ).rejects.toThrow(/forkRepo failed/);
+  });
+});
+
+// These operations remain unsupported by the real local adapter. At the tool
+// boundary, aliases must still resolve before adapter routing and same-repo detection.
+describe('canonical source arguments at the git adapter boundary', () => {
+  it('normalizes fork, branch, commit and both pull-request URLs', async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'git-alias-')));
+    const alias = join(dir, 'alias');
+    symlinkSync(dir, alias);
+    const url = pathToFileURL(alias).href + '/';
+    const a = { ...adapter(), commitFiles: vi.fn(async () => undefined) };
+    vi.mocked(pickSourceAdapter).mockResolvedValue(a as never);
+    const h = harness();
+    try {
+      await h.ensure_fork({ sourceUrl: url });
+      expect(a.ensureFork).toHaveBeenCalledWith(env, dir);
+      await h.ensure_branch({ workingUrl: url, branch: 'feature' });
+      expect(a.ensureBranch).toHaveBeenCalledWith(env, dir, 'feature');
+      const files = [{ path: 'entry.ts', content: 'new content' }];
+      await h.commit_files({ sourceUrl: url, files, branch: 'feature', commitMessage: 'update' });
+      expect(a.commitFiles).toHaveBeenCalledWith(env, dir, 'feature', files, 'update');
+      await h.open_pull_request({
+        sourceUrl: url,
+        workingUrl: dir + '/',
+        branch: 'feature',
+        base: 'main',
+        title: 't',
+        body: 'b',
+      });
+      expect(a.openPullRequest).toHaveBeenCalledWith(env, dir, 'feature', 'main', 't', 'b');
+      expect(vi.mocked(pickSourceAdapter).mock.calls).toEqual([[dir], [dir], [dir], [dir]]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
