@@ -1,3 +1,4 @@
+import { observeTreeTruncation } from '../tree-warning.js';
 import { z } from 'zod';
 import type { ToolHost } from '../permissions.js';
 import { grepSource, warmSource, wrapWithCache } from '@verevoir/context';
@@ -122,10 +123,11 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, ref }) => {
-      const adapter = await pickSourceAdapter(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
+      const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
       const result = await adapter.getRepoTree(env, sourceUrl, ref);
-      return { content: [{ type: 'text', text: jsonText(result) }] };
+      return { content: [{ type: 'text', text: jsonText(result) }, ...observed.warnings()] };
     }
   );
 
@@ -156,14 +158,15 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, pattern, ref, ignoreCase, maxResults }) => {
-      const adapter = await pickSourceAdapter(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
+      const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
       const result = await grepSource(adapter, env, sourceUrl, pattern, {
         ref,
         ignoreCase,
         maxResults,
       });
-      return { content: [{ type: 'text', text: jsonText(result) }] };
+      return { content: [{ type: 'text', text: jsonText(result) }, ...observed.warnings()] };
     }
   );
 
@@ -197,7 +200,8 @@ export function registerSourceTools(server: ToolHost): void {
     },
     async ({ sourceUrl, name, ref, kind }) => {
       const src = normalizeSourceUrl(sourceUrl);
-      const adapter = await pickSourceAdapter(src);
+      const observed = observeTreeTruncation(await pickSourceAdapter(src));
+      const { adapter } = observed;
       const env = resolveSourceEnv(src);
       await warmSource(adapter, env, src, { ref });
       const hits = findSymbols(name, {
@@ -205,7 +209,7 @@ export function registerSourceTools(server: ToolHost): void {
       });
       const filtered = kind ? hits.filter((h) => h.kind === kind) : hits;
       return {
-        content: [{ type: 'text', text: jsonText(filtered) }],
+        content: [{ type: 'text', text: jsonText(filtered) }, ...observed.warnings()],
       };
     }
   );
@@ -634,11 +638,12 @@ export function registerSourceTools(server: ToolHost): void {
     },
     async ({ sourceUrl, symbol, ref }) => {
       const src = normalizeSourceUrl(sourceUrl);
-      const adapter = await pickSourceAdapter(src);
+      const observed = observeTreeTruncation(await pickSourceAdapter(src));
+      const { adapter } = observed;
       const env = resolveSourceEnv(src);
       await warmSource(adapter, env, src, { ref });
       const text = queryCodeGraph(src, ref ?? '', symbol);
-      return { content: [{ type: 'text', text }] };
+      return { content: [{ type: 'text', text }, ...observed.warnings()] };
     }
   );
 }

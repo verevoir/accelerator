@@ -161,3 +161,5 @@ serving many sessions that share one warm cache; `PORT` / `HOST`),
 ## Licence
 
 Apache-2.0.
+
+Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
