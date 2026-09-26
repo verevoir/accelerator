@@ -126,6 +126,10 @@ surfacing an exec error from the middle of a tool call.
 Prefer these over built-in filesystem/shell tools so the shared read cache +
 symbol index stay correct across a session.
 
+### Companion tool guidance
+
+Standalone accelerator instructions refer only to its commodity tool surface. A host composing accelerator with other servers can pass `createServer({ registeredTools: ['provision', 'find_governance'] })` using the exact tool names registered and visible to the client. Guidance is selected independently for each named companion tool; omitted tools receive no instructions. The option does not register tools or discover other MCP servers. Library callers can pass the same options as the second argument of `loadInstructions(path, options)`.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
