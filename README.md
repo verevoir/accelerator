@@ -183,3 +183,20 @@ serving many sessions that share one warm cache; `PORT` / `HOST`),
 ## Licence
 
 Apache-2.0.
+
+### Named source sets
+
+Define repository groups in the selected project manifest (`verevoir-mcp.json`, `aigency.json`, or the `verevoir-mcp` block in `AGENTS.md`):
+
+```json
+{
+  "sourceSets": {
+    "leafset": "repositories/*",
+    "sync": ["repositories/core", "https://gitlab.com/group/schema"]
+  }
+}
+```
+
+Call `code_graph({ sourceSet: "leafset", symbol: "threeWayMerge" })`, or pass `sourceSet` to `grep` and `find_symbol`. Provide exactly one of `sourceUrl`, `sourceUrls`, or `sourceSet`. Named sets use the same source-labelled results as `sourceUrls`, including singleton sets, and keep each repository's cache and walk budget independent.
+
+Local paths resolve relative to the manifest file, regardless of the server's working directory. Explicit local entries must be directories; absolute paths and file URLs also work. The only glob supported is a final `/*`: immediate directories (including symlinks to directories) are expanded in sorted order, files are ignored, and no matching directories is an error. Remote URLs are literal sources. Unknown names, malformed sets, and unsupported globs fail explicitly. Server instructions list available set names without expanding them.

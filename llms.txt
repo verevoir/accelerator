@@ -130,3 +130,5 @@ verevoir-card-sync, verevoir-audit-trace.
 Public on npm; also consumable via git-install (github:verevoir/accelerator#vX.Y.Z,
 built on install by its prepare script). @verevoir/capabilities depends on it via
 the git form, so the moat needs no registry.
+
+Named source sets: project manifests accept `sourceSets: { leafset: "repositories/*", sync: ["repositories/core", "https://gitlab.com/group/schema"] }`. `grep`, `find_symbol`, and `code_graph` accept exactly one of sourceUrl/sourceUrls/sourceSet. Local set entries resolve relative to the manifest; final /* expands immediate directories in sorted order (no other globs), empty matches fail. Named sets retain sourceUrls result labelling even for one repository. Available names appear in server instructions.

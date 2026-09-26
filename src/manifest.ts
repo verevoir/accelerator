@@ -18,6 +18,8 @@ export interface GovernanceSource {
 }
 
 export interface AigencyManifest {
+  /** Named repo lists; relative paths and final /* globs use the manifest directory. */
+  sourceSets?: Record<string, string | string[]>;
   notion?: {
     workspaceRootPageId?: string;
     databases?: Record<string, string>;
@@ -311,5 +313,11 @@ export function renderProjectDoctrine(manifest: AigencyManifest): string | null 
  * returns the base doctrine unchanged. */
 export function composeInstructions(base: string, manifest: AigencyManifest | null): string {
   const section = manifest ? renderProjectDoctrine(manifest) : null;
-  return section ? `${base}\n\n${section}` : base;
+  const sets = manifest?.sourceSets;
+  const names =
+    sets && typeof sets === 'object' && !Array.isArray(sets) ? Object.keys(sets).sort() : [];
+  const sourceSets = names.length
+    ? `Named source sets: ${names.map((name) => JSON.stringify(name)).join(', ')}. Pass sourceSet to code_graph, grep, or find_symbol instead of sourceUrl/sourceUrls.`
+    : null;
+  return [base, section, sourceSets].filter((part) => part !== null).join('\n\n');
 }
