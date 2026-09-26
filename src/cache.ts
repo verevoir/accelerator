@@ -1,3 +1,4 @@
+import { normalizeSourceUrl } from './source-url.js';
 import { contextStore, type ContextStore } from '@verevoir/context';
 
 export function invalidateWrittenFile(
@@ -6,6 +7,7 @@ export function invalidateWrittenFile(
   branch: string,
   store: ContextStore = contextStore
 ): void {
+  sourceUrl = normalizeSourceUrl(sourceUrl);
   // Both ref scopes: a prior warm could have keyed the file under the
   // default ref or under the write's branch.
   store.invalidateItem({ sourceId: sourceUrl, version: '', itemId: path });

@@ -1,3 +1,4 @@
+import { normalizeSourceUrl } from './source-url.js';
 import { pickSourceAdapter, resolveSourceEnv } from './router.js';
 import {
   applyEdit,
@@ -25,6 +26,7 @@ export async function writeSourceFile(
   commitMessage: string,
   store: ContextStore = contextStore
 ): Promise<void> {
+  sourceUrl = normalizeSourceUrl(sourceUrl);
   const adapter = await pickSourceAdapter(sourceUrl);
   const env = resolveSourceEnv(sourceUrl);
   await adapter.writeFile(env, sourceUrl, path, content, branch, commitMessage);
@@ -48,6 +50,7 @@ export async function commitFilesSource(
   commitMessage: string,
   store: ContextStore = contextStore
 ): Promise<void> {
+  sourceUrl = normalizeSourceUrl(sourceUrl);
   const adapter = await pickSourceAdapter(sourceUrl);
   const env = resolveSourceEnv(sourceUrl);
   await adapter.commitFiles(env, sourceUrl, branch, files, commitMessage);
@@ -70,6 +73,7 @@ async function mutateSourceFile(
   commitMessage: string,
   store: ContextStore = contextStore
 ): Promise<{ replacements: number }> {
+  sourceUrl = normalizeSourceUrl(sourceUrl);
   const adapter = await pickSourceAdapter(sourceUrl);
   const env = resolveSourceEnv(sourceUrl);
   const { content } = await adapter.readFile(env, sourceUrl, path, branch || undefined);

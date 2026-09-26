@@ -161,3 +161,8 @@ serving many sessions that share one warm cache; `PORT` / `HOST`),
 ## Licence
 
 Apache-2.0.
+
+Local source paths, trailing-slash spellings, file:// URLs, and symlink aliases
+share one canonical cache identity across source tools. Existing roots use the
+real filesystem path; missing roots use an absolute lexical path until created.
+Other filesystem errors propagate. Remote source URLs are preserved unchanged.

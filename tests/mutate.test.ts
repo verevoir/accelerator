@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { realpathSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createContextStore } from '@verevoir/context';
@@ -16,7 +16,7 @@ import {
 describe('mutate cycle (local source)', () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'mutate-'));
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'mutate-')));
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
