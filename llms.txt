@@ -74,6 +74,10 @@ Native bash sits in its own shell class (never implied by write-local); grant it
 This is a policy + least-privilege + audit layer, NOT a sandbox — the real isolation boundary
 is running pi in a container. See docs/2026-07-24-pi-plugin-and-permissions.md.
 
+## Server instructions
+
+Server instructions: standalone accelerator emits commodity-tool guidance only. Composing hosts may pass `createServer({ registeredTools: [...] })` (or the same options as the second argument of `loadInstructions(path, options)`) with the exact companion tool names already registered and visible to their client. This only selects guidance; it does not register tools or discover other MCP servers.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
@@ -103,5 +107,3 @@ verevoir-card-sync, verevoir-audit-trace.
 Public on npm; also consumable via git-install (github:verevoir/accelerator#vX.Y.Z,
 built on install by its prepare script). @verevoir/capabilities depends on it via
 the git form, so the moat needs no registry.
-
-Server instructions: standalone accelerator emits commodity-tool guidance only. Composing hosts may pass `createServer({ registeredTools: [...] })` (or the same options as the second argument of `loadInstructions(path, options)`) with the exact companion tool names already registered and visible to their client. This only selects guidance; it does not register tools or discover other MCP servers.

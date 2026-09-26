@@ -68,9 +68,11 @@ describe('MCP initialization guidance', () => {
 });
 
 it('keeps fallback guidance and available companion guidance when documentation is missing', () => {
-  expect(
-    loadInstructions('/no/such/path/instructions.md', { registeredTools: ['provision'] })
-  ).toContain('Before changing code, call `provision`');
+  const text = loadInstructions('/no/such/path/instructions.md', {
+    registeredTools: ['provision'],
+  });
+  expect(text).toContain('front door');
+  expect(text).toContain('Before changing code, call `provision`');
 });
 
 it('ignores unknown companion names instead of emitting arbitrary instructions', () => {
