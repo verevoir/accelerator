@@ -131,11 +131,25 @@ surfacing an exec error from the middle of a tool call.
 Prefer these over built-in filesystem/shell tools so the shared read cache +
 symbol index stay correct across a session.
 
+`grep`, `find_symbol`, and `code_graph` accept either `sourceUrl` or a nonempty
+`sourceUrls` list. For example,
+`code_graph({ sourceUrls: ["/repos/core", "/repos/schema"], symbol: "runSync" })`
+resolves named calls against definitions across both repositories. Each source
+retains its own tree budget and cache; local and GitLab sources can be mixed.
+Grep and symbol hits include `sourceId`; multi-source graph locations and callees
+are labelled by source. Graph resolution remains approximate and name-based.
+Duplicate sources are searched once, in first-occurrence order. Grep's
+`maxResults` is a total budget across sources (default 50); `find_symbol` retains
+its total 50-hit limit. Source-level routing or enumeration failures fail the call
+and identify the source. A shared `ref` applies to every source; omit it when
+including local working trees, which cannot read a git ref. Single-source calls
+retain their response format.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
 `/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
-`/graph`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
+`/graph`, `/source-selection`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
 `/loop/search`, `/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
 dependency direction is **capabilities → accelerator** (never the reverse), which
 keeps governance out of the commodity layer.

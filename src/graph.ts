@@ -45,78 +45,87 @@ export function buildNeighbourhood(
   version: string,
   symbol: string
 ): Neighbourhood {
-  const scope = { sources: [{ sourceId: sourceUrl, version }] };
+  const nb = buildMultiSourceNeighbourhood(store, [{ sourceId: sourceUrl, version }], symbol);
+  return {
+    symbol,
+    definitions: nb.definitions.map(({ sourceId: _, ...location }) => location),
+    callers: nb.callers.map(({ sourceId: _, ...caller }) => caller),
+    callees: nb.callees.map(({ name }) => name),
+    importedBy: nb.importedBy.map(({ file }) => file),
+  };
+}
 
-  // 1. Full symbol set for this source → definedNames + location map.
-  const allSymbols = findSymbols('', scope, { maxResults: 5000, store });
-  const definedNames = new Set(allSymbols.map((h) => h.name));
-  const locationsByName = new Map<string, SymbolLocation[]>();
+export interface GraphSource {
+  sourceId: string;
+  version: string;
+}
+
+export interface MultiSourceNeighbourhood {
+  symbol: string;
+  definitions: Array<SymbolLocation & { sourceId: string }>;
+  callers: Array<CallerHit & { sourceId: string }>;
+  callees: Array<{ name: string; sourceId: string }>;
+  importedBy: Array<{ file: string; sourceId: string }>;
+}
+
+/** Resolve name-based edges against definitions across all selected sources.
+ * Source identities remain attached even when relative file paths coincide. */
+export function buildMultiSourceNeighbourhood(
+  store: ContextStore,
+  sources: GraphSource[],
+  symbol: string
+): MultiSourceNeighbourhood {
+  const allSymbols = findSymbols('', { sources }, { maxResults: Infinity, store });
+  const locationsByName = new Map<string, MultiSourceNeighbourhood['definitions']>();
   for (const hit of allSymbols) {
-    const locs = locationsByName.get(hit.name) ?? [];
-    locs.push({ file: hit.itemId, line: hit.startLine, kind: hit.kind });
-    locationsByName.set(hit.name, locs);
-  }
-
-  // 2. Walk every indexed item to collect all edges.
-  type RawCall = { from: string | null; to: string; itemId: string; line: number };
-  type RawImport = { itemId: string; names: string[] };
-
-  const allCalls: RawCall[] = [];
-  const allImports: RawImport[] = [];
-
-  for (const itemId of store.listIndexedItems(sourceUrl, version)) {
-    const edges = edgesForItem(store, sourceUrl, version, itemId);
-    if (!edges) continue;
-    for (const call of edges.calls) {
-      allCalls.push({ from: call.from, to: call.to, itemId, line: call.line });
-    }
-    for (const imp of edges.imports) {
-      allImports.push({ itemId, names: imp.names });
-    }
-  }
-
-  // 3. Definitions of the requested symbol.
-  const definitions = locationsByName.get(symbol) ?? [];
-
-  // 4. Callers — calls where `to === symbol` AND `from` is a defined symbol
-  //    (or the top-level sentinel null, which we map to the file itself).
-  const seenCallers = new Set<string>();
-  const callers: CallerHit[] = [];
-  for (const call of allCalls) {
-    if (call.to !== symbol) continue;
-    const fromName = call.from;
-    // Accept top-level calls (from === null) and calls from defined symbols.
-    if (fromName !== null && !definedNames.has(fromName)) continue;
-    const callerLabel = fromName ?? `<top-level:${call.itemId}>`;
-    const dedupeKey = `${callerLabel}|${call.itemId}|${call.line}`;
-    if (seenCallers.has(dedupeKey)) continue;
-    seenCallers.add(dedupeKey);
-    callers.push({
-      from: fromName ?? `<top-level>`,
-      file: call.itemId,
-      line: call.line,
+    const locations = locationsByName.get(hit.name) ?? [];
+    locations.push({
+      sourceId: hit.sourceId,
+      file: hit.itemId,
+      line: hit.startLine,
+      kind: hit.kind,
     });
+    locationsByName.set(hit.name, locations);
   }
 
-  // 5. Callees — calls where `from === symbol`, resolved to defined names only.
+  const callers: MultiSourceNeighbourhood['callers'] = [];
+  const callees: MultiSourceNeighbourhood['callees'] = [];
+  const importedBy: MultiSourceNeighbourhood['importedBy'] = [];
+  const seenCallers = new Set<string>();
   const seenCallees = new Set<string>();
-  for (const call of allCalls) {
-    if (call.from !== symbol) continue;
-    if (!definedNames.has(call.to)) continue; // drop stdlib / method noise
-    seenCallees.add(call.to);
-  }
-  const callees = [...seenCallees];
-
-  // 6. ImportedBy — files that import `symbol` by name.
-  const importedBySet = new Set<string>();
-  for (const imp of allImports) {
-    if (imp.names.includes(symbol)) {
-      importedBySet.add(imp.itemId);
+  const seenImports = new Set<string>();
+  for (const { sourceId, version } of sources) {
+    for (const file of store.listIndexedItems(sourceId, version)) {
+      const edges = edgesForItem(store, sourceId, version, file);
+      if (!edges) continue;
+      for (const call of edges.calls) {
+        if (call.to === symbol && (call.from === null || locationsByName.has(call.from))) {
+          const key = JSON.stringify([sourceId, call.from, file, call.line]);
+          if (!seenCallers.has(key)) {
+            seenCallers.add(key);
+            callers.push({ sourceId, from: call.from ?? '<top-level>', file, line: call.line });
+          }
+        }
+        if (call.from === symbol) {
+          for (const target of locationsByName.get(call.to) ?? []) {
+            const key = JSON.stringify([target.sourceId, call.to]);
+            if (!seenCallees.has(key)) {
+              seenCallees.add(key);
+              callees.push({ sourceId: target.sourceId, name: call.to });
+            }
+          }
+        }
+      }
+      if (edges.imports.some((imp) => imp.names.includes(symbol))) {
+        const key = JSON.stringify([sourceId, file]);
+        if (!seenImports.has(key)) {
+          seenImports.add(key);
+          importedBy.push({ sourceId, file });
+        }
+      }
     }
   }
-  const importedBy = [...importedBySet];
-
-  return { symbol, definitions, callers, callees, importedBy };
+  return { symbol, definitions: locationsByName.get(symbol) ?? [], callers, callees, importedBy };
 }
 
 // ---------------------------------------------------------------------------
@@ -179,4 +188,16 @@ export function renderNeighbourhood(nb: Neighbourhood, sourceUrl: string): strin
 export function queryCodeGraph(sourceUrl: string, version: string, symbol: string): string {
   const nb = buildNeighbourhood(contextStore, sourceUrl, version, symbol);
   return renderNeighbourhood(nb, sourceUrl);
+}
+
+export function queryMultiSourceCodeGraph(sources: GraphSource[], symbol: string): string {
+  const nb = buildMultiSourceNeighbourhood(contextStore, sources, symbol);
+  const labelled: Neighbourhood = {
+    symbol,
+    definitions: nb.definitions.map((d) => ({ ...d, file: `[${d.sourceId}] ${d.file}` })),
+    callers: nb.callers.map((c) => ({ ...c, file: `[${c.sourceId}] ${c.file}` })),
+    callees: nb.callees.map((c) => `[${c.sourceId}] ${c.name}`),
+    importedBy: nb.importedBy.map((i) => `[${i.sourceId}] ${i.file}`),
+  };
+  return renderNeighbourhood(labelled, sources.map((source) => source.sourceId).join(', '));
 }
