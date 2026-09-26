@@ -134,6 +134,14 @@ describe('MCP searches across independent repositories', () => {
     ]);
   });
 
+  it('returns large grep result sets without exceeding function argument limits', async () => {
+    const hitCount = 150_000;
+    writeFileSync(join(core, 'index.ts'), '');
+    writeFileSync(join(core, 'large.txt'), 'x\n'.repeat(hitCount));
+    const result = await tools.grep({ sourceUrl: core, pattern: 'x', maxResults: hitCount });
+    expect(JSON.parse(result.content[0].text)).toHaveLength(hitCount);
+  });
+
   it('applies one total grep budget in source order', async () => {
     writeFileSync(join(schema, 'index.ts'), CALLEE + '\nexport function extra() {}');
     const limited = await tools.grep({

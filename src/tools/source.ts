@@ -238,7 +238,7 @@ export function registerSourceTools(server: ToolHost): void {
             maxResults: limit - result.length,
           });
         });
-        result.push(...hits);
+        for (const hit of hits) result.push(hit);
       }
       return { content: [{ type: 'text', text: jsonText(result) }] };
     }
