@@ -170,7 +170,7 @@ Call `code_graph({ sourceSet: "leafset", symbol: "threeWayMerge" })`, or pass `s
 
 Named sets expand to at most 100 source entries before deduplication, matching the `sourceUrls` limit. Larger sets fail before any backend is called.
 
-Local paths resolve relative to the manifest file, regardless of the server's working directory. Explicit local entries must be directories; absolute paths and file URLs also work. The only glob supported is a final `/*`: immediate directories (including symlinks to directories) are expanded in sorted order, files are ignored, and no matching directories is an error. Remote URLs are literal sources. Unknown names, malformed sets, and unsupported globs fail explicitly. Server instructions list available set names without expanding them.
+Local entries must be relative directory paths within the manifest directory, regardless of the server's working directory. Absolute paths and file URLs are rejected in named sets. Canonical paths are checked before routing: `..` or symlink targets outside that directory are rejected, including wildcard roots and matches. Internal symlinks resolve to their canonical targets. The only glob supported is a final `/*`: immediate directories are expanded in sorted order, files are ignored, and no matching directories is an error. Explicit HTTP(S) repository URLs remain literal sources subject to normal backend host and credential routing. Explicit `sourceUrl`/`sourceUrls` selections retain their existing access rules; containment applies only to manifest-defined local sets. Unknown names, malformed sets, and unsupported globs fail explicitly. Server instructions list available set names without expanding them.
 
 ## Library (subpath exports)
 

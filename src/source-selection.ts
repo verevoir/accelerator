@@ -1,6 +1,5 @@
-import { readdirSync, statSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readdirSync, realpathSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { resolveManifest, type ManifestResolution } from './manifest.js';
 
 /** Cap the count of independent per-source walk budgets at 100. */
@@ -39,6 +38,16 @@ export function resolveSourceUrls(
   return [...new Set(urls)];
 }
 
+/** Resolve local set targets before routing, including every matched symlink. */
+function containedPath(path: string, base: string): string {
+  const target = realpathSync(path);
+  const offset = relative(base, target);
+  if (offset === '..' || offset.startsWith(`..${sep}`) || isAbsolute(offset)) {
+    throw new Error(`Source ${path} resolves outside the manifest directory.`);
+  }
+  return target;
+}
+
 /** Local patterns intentionally support only a final /*: each matched directory
  * is an independent source with its own cache and walk budget. */
 function expandSetEntry(entry: string, base: string): string[] {
@@ -46,7 +55,12 @@ function expandSetEntry(entry: string, base: string): string[] {
     if (entry.includes('*')) throw new Error('Remote source globs are not supported.');
     return [entry];
   }
-  const localEntry = entry.startsWith('file://') ? fileURLToPath(entry) : entry;
+  if (isAbsolute(entry) || /^file:/i.test(entry)) {
+    throw new Error(
+      'Named source sets require relative local paths within the manifest directory.'
+    );
+  }
+  const localEntry = entry;
   const hasGlob = /[?*\[\]{}]/.test(localEntry);
   if (hasGlob) {
     if (!localEntry.endsWith('/*') || /[?*\[\]{}]/.test(localEntry.slice(0, -2))) {
@@ -55,20 +69,21 @@ function expandSetEntry(entry: string, base: string): string[] {
   }
   const path = resolve(base, localEntry);
   if (hasGlob) {
-    const directory = path.slice(0, -2) || '/';
+    const directory = containedPath(path.slice(0, -2) || '/', base);
     const matches = readdirSync(directory, { withFileTypes: true })
       .filter(
         (entry) =>
           entry.isDirectory() ||
           (entry.isSymbolicLink() && statSync(join(directory, entry.name)).isDirectory())
       )
-      .map((entry) => join(directory, entry.name))
+      .map((entry) => containedPath(join(directory, entry.name), base))
       .sort();
     if (matches.length === 0) throw new Error(`Pattern ${entry} matched no directories.`);
     return matches;
   }
-  if (!statSync(path).isDirectory()) throw new Error(`Source ${entry} must be a directory.`);
-  return [path];
+  const target = containedPath(path, base);
+  if (!statSync(target).isDirectory()) throw new Error(`Source ${entry} must be a directory.`);
+  return [target];
 }
 
 function resolveSourceSet(name: string, resolution: ManifestResolution | null): string[] {
@@ -88,7 +103,8 @@ function resolveSourceSet(name: string, resolution: ManifestResolution | null): 
     throw new Error(`Source set ${name} entries must be nonblank strings.`);
   }
   try {
-    return entries.flatMap((entry) => expandSetEntry(entry, dirname(resolution.sourcePath)));
+    const base = realpathSync(dirname(resolution.sourcePath));
+    return entries.flatMap((entry) => expandSetEntry(entry, base));
   } catch (cause) {
     throw new Error(
       `Cannot resolve source set ${name}: ${cause instanceof Error ? cause.message : String(cause)}`,

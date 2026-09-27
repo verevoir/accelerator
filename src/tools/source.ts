@@ -87,7 +87,7 @@ const sourceSelectionSchema = {
     .min(1)
     .optional()
     .describe(
-      'Named source set from the project manifest, expanding to at most 100 source entries before deduplication. Local entries resolve relative to that manifest; a final /* expands immediate directories. Provide exactly one of sourceSet, sourceUrl, or sourceUrls.'
+      'Named source set from the project manifest, expanding to at most 100 source entries before deduplication. Local entries must be relative paths confined to the manifest directory, including symlink targets; a final /* expands immediate directories. Absolute paths and file URLs are rejected in named sets. Explicit HTTP(S) entries use normal backend routing. Provide exactly one of sourceSet, sourceUrl, or sourceUrls.'
     ),
   sourceUrls: z
     .array(z.string().min(1))

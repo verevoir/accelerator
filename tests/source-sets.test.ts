@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, realpathSync, symlinkSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as router from '../src/router.js';
 import type { ToolHost } from '../src/permissions.js';
@@ -21,12 +21,15 @@ registerSourceTools({
   },
 } as unknown as ToolHost);
 let root: string;
+let outside: string;
 let core: string;
 let schema: string;
 let manifest: ManifestResolution;
 beforeEach(() => {
   vi.stubEnv('ACCELERATOR_TOOLS', 'read');
   root = realpathSync(mkdtempSync(join(tmpdir(), 'accelerator-sets-')));
+  outside = root + '-outside';
+  mkdirSync(join(outside, 'child'), { recursive: true });
   core = join(root, 'repositories/core');
   schema = join(root, 'repositories/schema');
   mkdirSync(core, { recursive: true });
@@ -48,17 +51,18 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.mocked(resolveManifest).mockReset();
   rmSync(root, { recursive: true, force: true });
+  rmSync(outside, { recursive: true, force: true });
 });
 
 it('expands sorted directories relative to the manifest independently of process cwd, ignoring files', () => {
   expect(resolveSourceUrls({ sourceSet: 'leafset' }, manifest)).toEqual([core, schema]);
 });
 
-it('combines relative paths, file URLs, and remote sources in declared order without duplicates', () => {
+it('combines relative paths and remote sources in declared order without duplicates', () => {
   manifest.manifest.sourceSets = {
     mixed: [
       'repositories/schema',
-      pathToFileURL(core).href,
+      'repositories/core',
       'https://gitlab.com/group/project',
       'repositories/schema',
     ],
@@ -175,8 +179,10 @@ it.each([null, [], 'invalid'])('rejects malformed sourceSets collections %j', (s
 
 it('includes symlinks to directories in wildcard source sets', () => {
   const alias = join(root, 'repositories/link');
-  symlinkSync(core, alias, 'dir');
-  expect(resolveSourceUrls({ sourceSet: 'leafset' }, manifest)).toEqual([core, alias, schema]);
+  const shared = join(root, 'shared');
+  mkdirSync(shared);
+  symlinkSync(shared, alias, 'dir');
+  expect(resolveSourceUrls({ sourceSet: 'leafset' }, manifest)).toEqual([core, schema, shared]);
 });
 
 it('rejects remote glob patterns', () => {
@@ -229,4 +235,58 @@ it.each(
     tools[tool]({ sourceSet: 'bounded', pattern: 'needle', name: 'needle', symbol: 'needle' })
   ).rejects.toThrow('Select at most 100 sources per call.');
   expect(adapter).not.toHaveBeenCalled();
+});
+
+it('advertises multiple named sets in sorted order', () => {
+  expect(composeInstructions('base', { sourceSets: { zeta: 'z', alpha: 'a' } })).toBe(
+    'base\n\nNamed source sets: "alpha", "zeta". Pass sourceSet to code_graph, grep, or find_symbol instead of sourceUrl/sourceUrls.'
+  );
+});
+
+it.each([['leafset'], [], 'leafset', 42].map((sourceSets) => ({ sourceSets })))(
+  'does not advertise malformed sets %j',
+  ({ sourceSets }) => {
+    expect(composeInstructions('base', { sourceSets } as never)).toBe('base');
+  }
+);
+
+it.each(['absolute', 'file URL', 'parent', 'symlink', 'glob target', 'glob root'])(
+  'rejects an escaping %s source set before routing',
+  async (kind) => {
+    symlinkSync(outside, join(root, 'repositories/escape'), 'dir');
+    const entries: Record<string, string> = {
+      absolute: outside,
+      'file URL': pathToFileURL(outside).href,
+      parent: `../${basename(outside)}`,
+      symlink: 'repositories/escape',
+      'glob target': 'repositories/*',
+      'glob root': 'repositories/escape/*',
+    };
+    manifest.manifest.sourceSets = { escape: entries[kind] };
+    const adapter = vi.spyOn(router, 'pickSourceAdapter').mockImplementation(() => {
+      throw new Error('unsafe source must not be routed');
+    });
+    await expect(tools.grep({ sourceSet: 'escape', pattern: 'secret' })).rejects.toThrow(
+      /relative local paths|outside the manifest directory/
+    );
+    expect(adapter).not.toHaveBeenCalled();
+  }
+);
+
+it.each(['absolute', 'file URL'])(
+  'requires relative configuration even for an internal %s',
+  (kind) => {
+    manifest.manifest.sourceSets = {
+      internal: kind === 'absolute' ? core : pathToFileURL(core).href,
+    };
+    expect(() => resolveSourceUrls({ sourceSet: 'internal' }, manifest)).toThrow(
+      'relative local paths'
+    );
+  }
+);
+
+it('keeps explicit source selectors independent of manifest containment', () => {
+  expect(
+    resolveSourceUrls({ sourceUrls: [outside, pathToFileURL(outside).href] }, manifest)
+  ).toEqual([outside, pathToFileURL(outside).href]);
 });

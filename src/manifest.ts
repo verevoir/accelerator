@@ -309,8 +309,8 @@ export function renderProjectDoctrine(manifest: AigencyManifest): string | null 
 }
 
 /** Compose the universal doctrine with this project's manifest-derived layer.
- * No-project mode (null manifest, or a manifest with nothing to point at)
- * returns the base doctrine unchanged. */
+ * Returns the base doctrine unchanged when the manifest supplies neither
+ * a project record nor named source sets. */
 export function composeInstructions(base: string, manifest: AigencyManifest | null): string {
   const section = manifest ? renderProjectDoctrine(manifest) : null;
   const sets = manifest?.sourceSets;
