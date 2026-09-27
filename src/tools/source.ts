@@ -13,6 +13,7 @@ import {
 } from '../mutate.js';
 import { queryCodeGraph, queryMultiSourceCodeGraph } from '../graph.js';
 import { MAX_SOURCES, resolveSourceUrls, type SourceSelection } from '../source-selection.js';
+import { SEARCH_TIMEOUT_MS, withinSourceDeadline } from '../source-deadline.js';
 import { jsonText } from '../result.js';
 import { fileURLToPath } from 'node:url';
 import { isGitlabUrl, parseGitlabProjectUrl } from '@verevoir/sources/gitlab';
@@ -118,11 +119,13 @@ async function selectedSources(selection: SourceSelection): Promise<string[]> {
 }
 
 async function warmSelectedSources(sources: string[], ref?: string): Promise<void> {
+  const deadline = Date.now() + SEARCH_TIMEOUT_MS;
   for (const sourceUrl of sources) {
-    await inSource(sourceUrl, async () => {
-      const adapter = await pickSourceAdapter(sourceUrl);
-      await warmSource(adapter, resolveSourceEnv(sourceUrl), sourceUrl, { ref });
-    });
+    await inSource(sourceUrl, () =>
+      withinSourceDeadline(sourceUrl, deadline, (adapter) =>
+        warmSource(adapter, resolveSourceEnv(sourceUrl), sourceUrl, { ref })
+      )
+    );
   }
 }
 
@@ -236,16 +239,18 @@ export function registerSourceTools(server: ToolHost): void {
       const sources = await selectedSources({ sourceUrl, sourceUrls, sourceSet });
       const limit = maxResults ?? 50;
       const result: Awaited<ReturnType<typeof grepSource>> = [];
+      const deadline = Date.now() + SEARCH_TIMEOUT_MS;
       for (const src of sources) {
         if (result.length >= limit) break;
-        const hits = await inSource(src, async () => {
-          const adapter = await pickSourceAdapter(src);
-          return grepSource(adapter, resolveSourceEnv(src), src, pattern, {
-            ref,
-            ignoreCase,
-            maxResults: limit - result.length,
-          });
-        });
+        const hits = await inSource(src, () =>
+          withinSourceDeadline(src, deadline, (adapter) =>
+            grepSource(adapter, resolveSourceEnv(src), src, pattern, {
+              ref,
+              ignoreCase,
+              maxResults: limit - result.length,
+            })
+          )
+        );
         for (const hit of hits) result.push(hit);
       }
       return { content: [{ type: 'text', text: jsonText(result) }] };

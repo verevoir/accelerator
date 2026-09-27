@@ -133,7 +133,12 @@ symbol index stay correct across a session.
 
 `grep`, `find_symbol`, and `code_graph` accept either `sourceUrl` or a nonempty
 `sourceUrls` list of at most 100 entries (before deduplication). This bounds
-aggregate work to 100 per-source walk budgets. For example,
+the number of per-source walk budgets to 100. Routing and backend traversal have
+60 seconds per source and five minutes across the selection. Expiry fails the call
+with the source identified and prevents further backend reads or routing. The
+adapter API cannot cancel already in-flight requests; those may finish in the
+background, but their late results are discarded. Synchronous parsing is not
+preemptible. For example,
 `code_graph({ sourceUrls: ["/repos/core", "/repos/schema"], symbol: "runSync" })`
 resolves named calls against definitions across both repositories. Each source
 retains its own tree budget and cache; local and GitLab sources can be mixed.
@@ -171,7 +176,7 @@ Local paths resolve relative to the manifest file, regardless of the server's wo
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
 `/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
-`/graph`, `/source-selection`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
+`/graph`, `/source-selection`, `/source-deadline`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
 `/loop/search`, `/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
 dependency direction is **capabilities → accelerator** (never the reverse), which
 keeps governance out of the commodity layer.

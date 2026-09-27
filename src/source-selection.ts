@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveManifest, type ManifestResolution } from './manifest.js';
 
-/** Bound aggregate work to at most 100 independent per-source walk budgets. */
+/** Cap the count of independent per-source walk budgets at 100. */
 export const MAX_SOURCES = 100;
 
 export interface SourceSelection {

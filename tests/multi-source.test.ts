@@ -10,6 +10,7 @@ import type { ToolHost } from '../src/permissions.js';
 import { registerSourceTools } from '../src/tools/source.js';
 import { buildMultiSourceNeighbourhood } from '../src/graph.js';
 import { MAX_SOURCES, resolveSourceUrls } from '../src/source-selection.js';
+import { SEARCH_TIMEOUT_MS, SOURCE_TIMEOUT_MS } from '../src/source-deadline.js';
 import { pickSourceAdapter } from '../src/router.js';
 
 vi.mock('../src/router.js', async (importOriginal) => {
@@ -307,6 +308,114 @@ describe('MCP searches across independent repositories', () => {
     await tools.code_graph({ sourceUrls: [core, remote], symbol: 'runSync' });
     expect(readFile).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('search deadlines', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(pickSourceAdapter).mockReset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(pickSourceAdapter).mockRestore();
+  });
+
+  it.each(
+    ['grep', 'find_symbol', 'code_graph'].flatMap((tool) =>
+      ['routing', 'tree', 'read'].map((stage) => ({ tool, stage }))
+    )
+  )('bounds hung $stage in $tool without later backend work', async ({ tool, stage }) => {
+    const first = `https://gitlab.com/deadline/${tool}-${stage}`;
+    const later = `${first}-later`;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tree = {
+      entries: Array.from({ length: 40 }, (_, i) => ({ path: `${i}.ts`, type: 'blob' })),
+      truncated: false,
+    };
+    const getRepoTree = vi.fn(async () => {
+      if (stage === 'tree') await pending;
+      return tree;
+    });
+    const readFile = vi.fn(async () => {
+      if (stage === 'read') await pending;
+      return { content: 'export function target() {}', sha: 'sha' };
+    });
+    vi.mocked(pickSourceAdapter).mockImplementation(async () => {
+      if (stage === 'routing') await pending;
+      return { getRepoTree, readFile } as unknown as SourceAdapter;
+    });
+    const request = handlers()[tool]({
+      sourceUrls: [first, later],
+      pattern: 'target',
+      name: 'target',
+      symbol: 'target',
+    });
+    const rejected = expect(request).rejects.toThrow(
+      `Source ${first} failed: Source deadline exceeded`
+    );
+    await vi.advanceTimersByTimeAsync(SOURCE_TIMEOUT_MS);
+    await rejected;
+    const readsAtExpiry = readFile.mock.calls.length;
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(readFile).toHaveBeenCalledTimes(readsAtExpiry);
+    expect(pickSourceAdapter).toHaveBeenCalledTimes(1);
+    if (stage === 'routing') expect(getRepoTree).not.toHaveBeenCalled();
+    if (stage === 'tree') expect(readFile).not.toHaveBeenCalled();
+    if (stage === 'read') expect(readsAtExpiry).toBeGreaterThan(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['grep', 'find_symbol', 'code_graph'])(
+    'bounds aggregate traversal time in %s',
+    async (tool) => {
+      const sources = Array.from(
+        { length: 7 },
+        (_, i) => `https://gitlab.com/aggregate/${tool}-${i}`
+      );
+      const getRepoTree = vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50_001));
+        return { entries: [], truncated: false };
+      });
+      vi.mocked(pickSourceAdapter).mockResolvedValue({ getRepoTree } as unknown as SourceAdapter);
+      const request = handlers()[tool]({
+        sourceUrls: sources,
+        pattern: 'target',
+        name: 'target',
+        symbol: 'target',
+      });
+      const rejected = expect(request).rejects.toThrow(
+        `Source ${sources[5]} failed: Search deadline exceeded`
+      );
+      await vi.advanceTimersByTimeAsync(SEARCH_TIMEOUT_MS);
+      await rejected;
+      expect(pickSourceAdapter).toHaveBeenCalledTimes(6);
+      await vi.advanceTimersByTimeAsync(SOURCE_TIMEOUT_MS);
+      expect(pickSourceAdapter).not.toHaveBeenCalledWith(sources[6]);
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  );
+
+  it.each([false, true])(
+    'cleans its deadline timer after immediate completion (failure=%s)',
+    async (fail) => {
+      const getRepoTree = vi.fn(async () => {
+        if (fail) throw new Error('tree failed');
+        return { entries: [], truncated: false };
+      });
+      vi.mocked(pickSourceAdapter).mockResolvedValue({ getRepoTree } as unknown as SourceAdapter);
+      const request = handlers().find_symbol({
+        sourceUrl: 'https://gitlab.com/deadline/cleanup',
+        name: 'target',
+      });
+      if (fail) await expect(request).rejects.toThrow('tree failed');
+      else expect(JSON.parse((await request).content[0].text)).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  );
 });
 
 describe('combined graph identity', () => {
