@@ -1,4 +1,4 @@
-/** Bound aggregate work to at most 100 independent per-source walk budgets. */
+/** Cap the count of independent per-source walk budgets at 100. */
 export const MAX_SOURCES = 100;
 
 export interface SourceSelection {
