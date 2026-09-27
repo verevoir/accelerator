@@ -121,6 +121,33 @@ describe('MCP searches across independent repositories', () => {
     );
   });
 
+  it('renders every same-name definition with its source', async () => {
+    writeFileSync(join(core, 'index.ts'), CALLEE);
+    const result = await tools.code_graph({ sourceUrls: [core, schema], symbol: 'threeWayMerge' });
+    expect(result.content[0].text).toBe(
+      '`threeWayMerge` — 2 definitions: [' +
+        core +
+        '] index.ts:1 (function), [' +
+        schema +
+        '] index.ts:1 (function)\ncalled by: none\ncalls: none\nimported by: none'
+    );
+  });
+
+  it('renders every same-name callee with its source', async () => {
+    writeFileSync(join(core, 'index.ts'), CALLER + '\n' + CALLEE);
+    const result = await tools.code_graph({ sourceUrls: [core, schema], symbol: 'runSync' });
+    expect(result.content[0].text).toBe(
+      '`runSync` — defined at [' +
+        core +
+        '] index.ts:2 (function)\ncalled by: none\n' +
+        'calls: [' +
+        core +
+        '] threeWayMerge, [' +
+        schema +
+        '] threeWayMerge\nimported by: none'
+    );
+  });
+
   it('finds symbols in both repositories with source identities', async () => {
     const result = await tools.find_symbol({ sourceUrls: [core, schema], name: '' });
     expect(JSON.parse(result.content[0].text)).toEqual([
