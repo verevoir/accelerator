@@ -36,6 +36,7 @@ function symbolsForItem(store: ContextStore, sourceId: string, version: string, 
   const cached = store.getSymbols(key);
   if (cached) return cached;
   const content = store.getContent(key);
+  // Absence is temporary: leave it uncached so later content can be indexed.
   if (content === undefined) return [];
   const language = detectLanguage(itemId);
   let symbols: SymbolEntry[] = [];

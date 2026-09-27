@@ -272,3 +272,21 @@ describe('buildNeighbourhood — query-local indexing', () => {
     }
   });
 });
+
+it('leaves temporarily unavailable indexed content uncached and discovers it when supplied', () => {
+  const store = seedStore();
+  const pending = { sourceId: SOURCE_ID, version: VERSION, itemId: 'pending.ts' };
+  const view: ContextStore = {
+    ...store,
+    listIndexedItems: (sourceId, version) =>
+      [...new Set([...store.listIndexedItems(sourceId, version), pending.itemId])].sort(),
+  };
+  const original = [{ file: FILE_A, line: 1, kind: 'function' }];
+  expect(buildNeighbourhood(view, SOURCE_ID, VERSION, 'foo').definitions).toEqual(original);
+  expect(store.getSymbols(pending)).toBeUndefined();
+  store.setContent(pending, 'export function foo() {}');
+  expect(buildNeighbourhood(view, SOURCE_ID, VERSION, 'foo').definitions).toEqual([
+    { file: pending.itemId, line: 1, kind: 'function' },
+    ...original,
+  ]);
+});
