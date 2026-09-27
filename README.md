@@ -126,6 +126,15 @@ surfacing an exec error from the middle of a tool call.
 Prefer these over built-in filesystem/shell tools so the shared read cache +
 symbol index stay correct across a session.
 
+Use `refresh_source({ sourceUrl, ref? })` after out-of-band changes such as a
+submodule update. It drops cached content, symbols, and graph edges for exactly
+that source and ref; omitting `ref` clears only the default-ref cache. Other
+sources and refs stay warm. Refresh is idempotent, requires no backend credentials,
+and changes no source files, so it is available in the `read` permission class.
+For file:// input, refresh clears both that exact URL and its decoded path for
+the selected ref. Other path spellings are separate identities; pass the spelling
+used by the reads you want to refresh.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
@@ -161,9 +170,3 @@ serving many sessions that share one warm cache; `PORT` / `HOST`),
 ## Licence
 
 Apache-2.0.
-
-Use `refresh_source({ sourceUrl, ref? })` after out-of-band changes such as a
-submodule update. It drops cached content, symbols, and graph edges for exactly
-that source and ref; omitting `ref` clears only the default-ref cache. Other
-sources and refs stay warm. Refresh is idempotent, requires no backend credentials,
-and changes no source files, so it is available in the `read` permission class.

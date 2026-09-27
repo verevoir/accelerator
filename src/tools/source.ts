@@ -74,8 +74,12 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, ref }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
-      contextStore.invalidateVersion(sourceUrl, ref ?? '');
+      const normalized = normalizeSourceUrl(sourceUrl);
+      // Reads may still use the raw identity while graph/symbol queries normalize.
+      for (const identity of new Set([sourceUrl, normalized])) {
+        contextStore.invalidateVersion(identity, ref ?? '');
+      }
+      sourceUrl = normalized;
       return {
         content: [{ type: 'text', text: jsonText({ ok: true, sourceUrl, ref: ref ?? '' }) }],
       };

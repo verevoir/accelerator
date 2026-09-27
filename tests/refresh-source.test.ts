@@ -6,16 +6,59 @@ import { pathToFileURL } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import * as router from '../src/router.js';
-import { contextStore } from '@verevoir/context';
+import type * as Context from '@verevoir/context';
 import type { ToolHost } from '../src/permissions.js';
+import { createContextStore } from '@verevoir/context';
+import * as router from '../src/router.js';
 import { registerSourceTools } from '../src/tools/source.js';
+// Each case owns a fresh store. Bind every real cache entry point, including
+// the filesystem adapter's inner cache and symbol lookup, to that same store.
+const isolated = vi.hoisted(() => ({ store: undefined as unknown as Context.ContextStore }));
+vi.mock('@verevoir/context', async () => {
+  const actual = await vi.importActual<typeof Context>('@verevoir/context');
+  return {
+    ...actual,
+    get contextStore() {
+      return isolated.store;
+    },
+    wrapWithCache: (...[adapter, options]: Parameters<typeof actual.wrapWithCache>) =>
+      actual.wrapWithCache(adapter, { ...options, store: options?.store ?? isolated.store }),
+    warmSource: (...[adapter, env, url, options]: Parameters<typeof actual.warmSource>) =>
+      actual.warmSource(adapter, env, url, { ...options, store: options?.store ?? isolated.store }),
+    grepSource: (...[adapter, env, url, pattern, options]: Parameters<typeof actual.grepSource>) =>
+      actual.grepSource(adapter, env, url, pattern, {
+        ...options,
+        store: options?.store ?? isolated.store,
+      }),
+  };
+});
+vi.mock('@verevoir/context/fs', async () => {
+  const { fs } =
+    await vi.importActual<typeof import('@verevoir/sources/fs')>('@verevoir/sources/fs');
+  const { wrapWithCache } = await vi.importActual<typeof Context>('@verevoir/context');
+  return {
+    get fs() {
+      return wrapWithCache(fs, { store: isolated.store });
+    },
+  };
+});
+vi.mock('@verevoir/context/code', async () => {
+  const actual =
+    await vi.importActual<typeof import('@verevoir/context/code')>('@verevoir/context/code');
+  return {
+    ...actual,
+    findSymbols: (...[name, scope, options]: Parameters<typeof actual.findSymbols>) =>
+      actual.findSymbols(name, scope, { ...options, store: options?.store ?? isolated.store }),
+  };
+});
 
 type Handler = (args: Record<string, unknown>) => Promise<{ content: { text: string }[] }>;
 describe('refresh_source', () => {
   let root: string;
+  let contextStore: Context.ContextStore;
   let handlers: Record<string, Handler>;
   beforeEach(() => {
+    contextStore = isolated.store = createContextStore();
     root = realpathSync(mkdtempSync(join(tmpdir(), 'refresh-source-')));
     writeFileSync(join(root, 'entry.ts'), 'export function originalName() { return 1; }');
     handlers = {};
@@ -27,9 +70,6 @@ describe('refresh_source', () => {
   });
   afterEach(() => {
     vi.restoreAllMocks();
-    contextStore.invalidateVersion(root, '');
-    contextStore.invalidateVersion(root, 'feature');
-    contextStore.invalidateVersion(root + '-other', '');
     rmSync(root, { recursive: true, force: true });
   });
   it('registers cache refresh in the public tool surface', () => {
@@ -73,7 +113,10 @@ describe('refresh_source', () => {
     expect(JSON.parse(result.content[0].text).content).toBe('fresh content');
   });
   it('drops deleted files from the symbol index', async () => {
-    await handlers.find_symbol({ sourceUrl: root, name: 'originalName' });
+    const initial = await handlers.find_symbol({ sourceUrl: root, name: 'originalName' });
+    expect(JSON.parse(initial.content[0].text)).toEqual([
+      expect.objectContaining({ name: 'originalName' }),
+    ]);
     unlinkSync(join(root, 'entry.ts'));
     await handlers.refresh_source({ sourceUrl: root });
     expect(
@@ -87,7 +130,8 @@ describe('refresh_source', () => {
       join(root, 'entry.ts'),
       'export function target() {} export function caller() { target(); }'
     );
-    await handlers.code_graph({ sourceUrl: root, symbol: 'target' });
+    const initial = await handlers.code_graph({ sourceUrl: root, symbol: 'target' });
+    expect(initial.content[0].text).toContain('called by: caller');
     writeFileSync(
       join(root, 'entry.ts'),
       'export function target() {} export function caller() {}'
@@ -105,12 +149,31 @@ describe('refresh_source', () => {
         .content
     ).toBe('changed through alias');
   });
+  it('refreshes file URL reads cached by the real wrapper', async () => {
+    const sourceUrl = pathToFileURL(root).href;
+    let content = 'before refresh';
+    // Local file URL adapter support is separate from refresh. Keep the real
+    // cache wrapper and tool handlers, substituting only backend I/O.
+    const readFile = vi.fn(async () => ({ content }));
+    vi.spyOn(router, 'pickSourceAdapter').mockResolvedValue({ readFile } as never);
+    await handlers.read_file({ sourceUrl, path: 'entry.ts' });
+    expect(contextStore.getContent({ sourceId: sourceUrl, version: '', itemId: 'entry.ts' })).toBe(
+      content
+    );
+    content = 'after refresh';
+    await handlers.refresh_source({ sourceUrl });
+    const result = await handlers.read_file({ sourceUrl, path: 'entry.ts' });
+    expect(JSON.parse(result.content[0].text).content).toBe(content);
+    expect(readFile).toHaveBeenCalledTimes(2);
+  });
   it.each([undefined, 'feature'])(
     'invalidates only the requested ref %s, preserving other sources',
     async (ref) => {
       const keys = [
         { sourceId: root, version: '', itemId: 'entry.ts' },
         { sourceId: root, version: 'feature', itemId: 'entry.ts' },
+        { sourceId: pathToFileURL(root).href, version: '', itemId: 'entry.ts' },
+        { sourceId: pathToFileURL(root).href, version: 'feature', itemId: 'entry.ts' },
         { sourceId: root + '-other', version: '', itemId: 'entry.ts' },
       ];
       for (const key of keys) {
@@ -118,7 +181,7 @@ describe('refresh_source', () => {
         contextStore.setSymbols(key, []);
         contextStore.setEdges(key, { calls: [], imports: [] });
       }
-      await handlers.refresh_source({ sourceUrl: root, ref });
+      await handlers.refresh_source({ sourceUrl: pathToFileURL(root).href, ref });
       expect(
         keys.map((key) => [
           contextStore.getContent(key),
@@ -127,7 +190,7 @@ describe('refresh_source', () => {
         ])
       ).toEqual(
         keys.map((key) =>
-          key.sourceId === root && key.version === (ref ?? '')
+          key.sourceId !== root + '-other' && key.version === (ref ?? '')
             ? [undefined, undefined, undefined]
             : ['cached', [], { calls: [], imports: [] }]
         )

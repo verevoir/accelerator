@@ -48,6 +48,14 @@ commit_files, ensure_fork, ensure_branch, open_pull_request. Work tracker: list_
 move_card, list_columns, list_comments, add_comment. Prefer these over built-in
 filesystem/shell so the shared cache + index stay correct.
 
+refresh_source({ sourceUrl, ref? }) clears cached content, symbols, and graph
+edges after out-of-band edits. Omit ref to clear only the default-ref cache;
+other refs and sources remain cached. No backend fetches or source writes; it
+is idempotent and belongs to the read permission class.
+For file:// input, refresh clears both that exact URL and its decoded path for
+the selected ref. Other path spellings are separate identities; pass the spelling
+used by the reads you want to refresh.
+
 grep is lazy (via @verevoir/context 0.14): it reads the source in deterministic
 order and stops once maxResults matches are settled, warming only the files it
 reads — a small query no longer touches every file; the hits are identical to a
@@ -103,8 +111,3 @@ verevoir-card-sync, verevoir-audit-trace.
 Public on npm; also consumable via git-install (github:verevoir/accelerator#vX.Y.Z,
 built on install by its prepare script). @verevoir/capabilities depends on it via
 the git form, so the moat needs no registry.
-
-refresh_source({ sourceUrl, ref? }) clears cached content, symbols, and graph
-edges after out-of-band edits. Omit ref to clear only the default-ref cache;
-other refs and sources remain cached. No backend fetches or source writes; it
-is idempotent and belongs to the read permission class.
