@@ -130,12 +130,15 @@ Local source paths, trailing-slash spellings, file:// URLs, and symlink aliases
 share one canonical cache identity across source tools. Existing roots use the
 real filesystem path; missing roots use an absolute lexical path until created.
 Other filesystem errors propagate. Remote source URLs are preserved unchanged.
-Async tools resolve paths without blocking the event loop and fail a stalled lookup
-after five seconds. The source-url subpath exposes normalizeSourceUrlAsync for
-async consumers and retains normalizeSourceUrl as a synchronous compatibility API.
-No path mappings are memoized. The cache subpath also exposes
-invalidateCanonicalWrittenFile for identities already resolved before a write;
-invalidateWrittenFile retains synchronous alias resolution for existing callers.
+Async tools use normalizeSourceUrlAsync from the source-url subpath to resolve
+paths without blocking the event loop. Its five-second timeout bounds only the
+path lookup promise, not the complete tool operation. Node cannot cancel the
+underlying realpath syscall: timed-out lookups may keep shared threadpool workers
+occupied and delay other filesystem requests. No path mappings are memoized.
+The synchronous compatibility exports normalizeSourceUrl, queryCodeGraph and
+invalidateWrittenFile can block indefinitely while resolving local aliases;
+the async timeout does not apply to them. The cache subpath also exposes
+invalidateCanonicalWrittenFile for identities already resolved before a write.
 
 ## Library (subpath exports)
 

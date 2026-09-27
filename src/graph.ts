@@ -174,7 +174,8 @@ export function renderNeighbourhood(nb: Neighbourhood, sourceUrl: string): strin
 }
 
 // ---------------------------------------------------------------------------
-// Convenience wrapper used by the MCP tool (uses the singleton store)
+// Synchronous library wrapper over the singleton store. Local alias resolution
+// can block indefinitely; MCP handlers resolve asynchronously before build/render.
 // ---------------------------------------------------------------------------
 
 export function queryCodeGraph(sourceUrl: string, version: string, symbol: string): string {

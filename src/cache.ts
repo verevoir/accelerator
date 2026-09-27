@@ -1,6 +1,9 @@
 import { normalizeSourceUrl } from './source-url.js';
 import { contextStore, type ContextStore } from '@verevoir/context';
 
+/** Synchronous compatibility API; resolving a local alias can block indefinitely.
+ * Async mutations instead pass an already-resolved identity to the helper below.
+ */
 export function invalidateWrittenFile(
   sourceUrl: string,
   path: string,
