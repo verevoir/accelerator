@@ -86,7 +86,7 @@ const sourceSelectionSchema = {
     .min(1)
     .optional()
     .describe(
-      'Named source set from the project manifest. Provide exactly one of sourceSet, sourceUrl, or sourceUrls.'
+      'Named source set from the project manifest, expanding to at most 100 source entries before deduplication. Local entries resolve relative to that manifest; a final /* expands immediate directories. Provide exactly one of sourceSet, sourceUrl, or sourceUrls.'
     ),
   sourceUrls: z
     .array(z.string().min(1))
