@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { realpathSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { createContextStore } from '@verevoir/context';
 import {
@@ -22,8 +23,8 @@ describe('mutate cycle (local source)', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('writeSourceFile writes full contents to the source', async () => {
-    await writeSourceFile(dir, 'a.txt', 'hello world', '', '');
+  it('writeSourceFile writes full contents to the source through a file URL', async () => {
+    await writeSourceFile(pathToFileURL(dir).href, 'a.txt', 'hello world', '', '');
     expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('hello world');
   });
 
@@ -46,9 +47,9 @@ describe('mutate cycle (local source)', () => {
     expect(store.getContent(key)).toBe('still valid');
   });
 
-  it('editSourceFile reads, applies the edit, writes back, and reports the count', async () => {
+  it('editSourceFile reads, applies the edit, writes back, and reports the count through a file URL', async () => {
     writeFileSync(join(dir, 'a.txt'), 'foo bar foo');
-    const r = await editSourceFile(dir, 'a.txt', 'foo', 'baz', true, '', '');
+    const r = await editSourceFile(pathToFileURL(dir).href, 'a.txt', 'foo', 'baz', true, '', '');
     expect(r.replacements).toBe(2);
     expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('baz bar baz');
   });
@@ -82,10 +83,10 @@ describe('mutate cycle (local source)', () => {
     );
   });
 
-  it('multiEditSourceFile applies an atomic list of edits and reports the total count', async () => {
+  it('multiEditSourceFile applies an atomic list of edits and reports the total count through a file URL', async () => {
     writeFileSync(join(dir, 'm.txt'), 'foo bar foo baz');
     const r = await multiEditSourceFile(
-      dir,
+      pathToFileURL(dir).href,
       'm.txt',
       [
         { oldString: 'foo', newString: 'FOO', replaceAll: true },
@@ -116,16 +117,24 @@ describe('mutate cycle (local source)', () => {
     expect(readFileSync(join(dir, 'm.txt'), 'utf8')).toBe('a b c');
   });
 
-  it('insertSourceFile inserts text after a unique anchor', async () => {
+  it('insertSourceFile inserts text after a unique anchor through a file URL', async () => {
     writeFileSync(join(dir, 'i.txt'), 'hello world');
-    const r = await insertSourceFile(dir, 'i.txt', 'hello', ' there', 'after', '', '');
+    const r = await insertSourceFile(
+      pathToFileURL(dir).href,
+      'i.txt',
+      'hello',
+      ' there',
+      'after',
+      '',
+      ''
+    );
     expect(r.replacements).toBe(1);
     expect(readFileSync(join(dir, 'i.txt'), 'utf8')).toBe('hello there world');
   });
 
-  it('deleteBlockSourceFile removes a unique block', async () => {
+  it('deleteBlockSourceFile removes a unique block through a file URL', async () => {
     writeFileSync(join(dir, 'd.txt'), 'keep DROP keep');
-    const r = await deleteBlockSourceFile(dir, 'd.txt', ' DROP', '', '');
+    const r = await deleteBlockSourceFile(pathToFileURL(dir).href, 'd.txt', ' DROP', '', '');
     expect(r.replacements).toBe(1);
     expect(readFileSync(join(dir, 'd.txt'), 'utf8')).toBe('keep keep');
   });
@@ -191,9 +200,9 @@ describe('mutate cycle (local source)', () => {
     );
   });
 
-  it('commitFilesSource writes the whole file set to the source', async () => {
+  it('commitFilesSource writes the whole file set to the source through a file URL', async () => {
     await commitFilesSource(
-      dir,
+      pathToFileURL(dir).href,
       '',
       [
         { path: 'x.txt', content: 'X' },

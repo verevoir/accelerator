@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ToolHost } from '../permissions.js';
-import { grepSource, warmSource, wrapWithCache } from '@verevoir/context';
+import { contextStore, grepSource, warmSource, wrapWithCache } from '@verevoir/context';
 import { findSymbols } from '@verevoir/context/code';
 import { pickSourceAdapter, resolveSourceEnv } from '../router.js';
 import {
@@ -11,9 +11,9 @@ import {
   deleteBlockSourceFile,
   commitFilesSource,
 } from '../mutate.js';
-import { queryCodeGraph } from '../graph.js';
+import { buildNeighbourhood, renderNeighbourhood } from '../graph.js';
 import { jsonText } from '../result.js';
-import { normalizeSourceUrl } from '../source-url.js';
+import { normalizeSourceUrlAsync } from '../source-url.js';
 export { normalizeSourceUrl } from '../source-url.js';
 
 // `branch` + `commitMessage` are needed only for GitHub commits; filesystem and
@@ -62,7 +62,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, path, ref }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = wrapWithCache(await pickSourceAdapter(sourceUrl));
       const env = resolveSourceEnv(sourceUrl);
       const result = await adapter.readFile(env, sourceUrl, path, ref);
@@ -90,7 +90,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, prefix, ref }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       const result = await adapter.listFiles(env, sourceUrl, prefix ?? '', ref);
@@ -117,7 +117,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, ref }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       const result = await adapter.getRepoTree(env, sourceUrl, ref);
@@ -152,7 +152,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, pattern, ref, ignoreCase, maxResults }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       const result = await grepSource(adapter, env, sourceUrl, pattern, {
@@ -193,7 +193,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, name, ref, kind }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       await warmSource(adapter, env, sourceUrl, { ref });
@@ -243,7 +243,6 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, path, content, branch, commitMessage }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
       const commit = commitArgs(sourceUrl, branch, commitMessage);
       await writeSourceFile(sourceUrl, path, content, commit.branch, commit.commitMessage);
       return { content: [{ type: 'text', text: jsonText({ ok: true }) }] };
@@ -289,7 +288,6 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, path, oldString, newString, branch, commitMessage, replaceAll }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
       const commit = commitArgs(sourceUrl, branch, commitMessage);
       const result = await editSourceFile(
         sourceUrl,
@@ -354,7 +352,6 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, path, edits, branch, commitMessage }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
       const commit = commitArgs(sourceUrl, branch, commitMessage);
       const result = await multiEditSourceFile(
         sourceUrl,
@@ -403,7 +400,6 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, path, anchor, text, position, branch, commitMessage }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
       const commit = commitArgs(sourceUrl, branch, commitMessage);
       const result = await insertSourceFile(
         sourceUrl,
@@ -452,7 +448,6 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, path, block, branch, commitMessage }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
       const commit = commitArgs(sourceUrl, branch, commitMessage);
       const result = await deleteBlockSourceFile(
         sourceUrl,
@@ -512,7 +507,6 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, files, branch, commitMessage }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
       const commit = commitArgs(sourceUrl, branch, commitMessage);
       await commitFilesSource(sourceUrl, commit.branch, files, commit.commitMessage);
       return {
@@ -548,7 +542,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       const workingUrl = await adapter.ensureFork(env, sourceUrl);
@@ -575,7 +569,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ workingUrl, branch }) => {
-      workingUrl = normalizeSourceUrl(workingUrl);
+      workingUrl = await normalizeSourceUrlAsync(workingUrl);
       const adapter = await pickSourceAdapter(workingUrl);
       const env = resolveSourceEnv(workingUrl);
       await adapter.ensureBranch(env, workingUrl, branch);
@@ -603,8 +597,8 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, workingUrl, branch, base, title, body }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
-      workingUrl = normalizeSourceUrl(workingUrl);
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
+      workingUrl = await normalizeSourceUrlAsync(workingUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       // Same repo for source + working → a same-repo PR (head is just the
@@ -640,11 +634,14 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, symbol, ref }) => {
-      sourceUrl = normalizeSourceUrl(sourceUrl);
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       await warmSource(adapter, env, sourceUrl, { ref });
-      const text = queryCodeGraph(sourceUrl, ref ?? '', symbol);
+      const text = renderNeighbourhood(
+        buildNeighbourhood(contextStore, sourceUrl, ref ?? '', symbol),
+        sourceUrl
+      );
       return { content: [{ type: 'text', text }] };
     }
   );

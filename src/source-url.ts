@@ -1,23 +1,55 @@
 import { realpathSync } from 'node:fs';
+import { realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Canonical cache identity for local sources; remote URLs remain unchanged.
- * Existing roots resolve symlinks. Missing roots retain their absolute lexical
- * path so write_file can create them; other filesystem errors propagate.
- * Kept synchronous for compatibility with the original tools/source export.
- */
+function localPath(sourceUrl: string): string | undefined {
+  if (sourceUrl.startsWith('file://')) return fileURLToPath(sourceUrl);
+  if (sourceUrl.startsWith('~/')) return resolve(homedir(), sourceUrl.slice(2));
+  if (sourceUrl.startsWith('/') || sourceUrl.startsWith('./')) return sourceUrl;
+  return undefined;
+}
+
+function missingPath(error: unknown, path: string): string {
+  if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  return resolve(path);
+}
+
+/** Synchronous compatibility API. Async callers should use normalizeSourceUrlAsync. */
 export function normalizeSourceUrl(sourceUrl: string): string {
-  let path: string;
-  if (sourceUrl.startsWith('file://')) path = fileURLToPath(sourceUrl);
-  else if (sourceUrl.startsWith('~/')) path = resolve(homedir(), sourceUrl.slice(2));
-  else if (sourceUrl.startsWith('/') || sourceUrl.startsWith('./')) path = sourceUrl;
-  else return sourceUrl;
+  const path = localPath(sourceUrl);
+  if (path === undefined) return sourceUrl;
   try {
     return realpathSync(path);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    return resolve(path);
+    return missingPath(error, path);
+  }
+}
+
+/** Resolve local aliases without blocking the server's event loop. Missing roots
+ * retain their absolute lexical identity so writes can create them. No memoized
+ * path mappings: retargeted symlinks are resolved again on the next operation.
+ * A stalled filesystem fails the request after five seconds; Node cannot cancel
+ * the underlying realpath syscall, but other requests remain able to run.
+ */
+export async function normalizeSourceUrlAsync(sourceUrl: string): Promise<string> {
+  const path = localPath(sourceUrl);
+  if (path === undefined) return sourceUrl;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      realpath(path),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Source path resolution timed out after 5000ms')),
+          5000
+        );
+      }),
+    ]);
+  } catch (error) {
+    return missingPath(error, path);
+  } finally {
+    clearTimeout(timer);
   }
 }

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ToolHost } from '../src/permissions.js';
 import { registerSourceTools, normalizeSourceUrl } from '../src/tools/source.js';
+import { normalizeSourceUrlAsync } from '../src/source-url.js';
 import { queryCodeGraph } from '../src/graph.js';
 import { invalidateWrittenFile } from '../src/cache.js';
 import { contextStore } from '@verevoir/context';
@@ -145,6 +146,17 @@ describe('local source aliases', () => {
       expect(JSON.parse(result.content[0].text).content).toBe(expected);
     }
   );
+  it.each([0, 1, 2])('async normalization resolves real alias %i', async (index) => {
+    expect(await normalizeSourceUrlAsync(aliases[index])).toBe(root);
+  });
+  it('resolves a retargeted symlink again on the next async operation', async () => {
+    expect(await normalizeSourceUrlAsync(aliases[2])).toBe(root);
+    const next = join(dir, 'next');
+    mkdirSync(next);
+    rmSync(aliases[2]);
+    symlinkSync(next, aliases[2]);
+    expect(await normalizeSourceUrlAsync(aliases[2])).toBe(next);
+  });
   it('preserves a lexical absolute path when the root is missing', () => {
     expect(normalizeSourceUrl(join(dir, 'missing') + '/')).toBe(join(dir, 'missing'));
   });
