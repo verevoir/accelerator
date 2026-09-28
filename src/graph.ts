@@ -1,6 +1,6 @@
 import { contextStore } from '@verevoir/context';
-import { edgesForItem, findSymbols } from '@verevoir/context/code';
-import type { ContextStore } from '@verevoir/context';
+import { detectLanguage, edgesForItem, parseSymbols } from '@verevoir/context/code';
+import type { ContextStore, SymbolEntry } from '@verevoir/context';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,93 +30,89 @@ export interface Neighbourhood {
 // Core pure helper — testable without an MCP server
 // ---------------------------------------------------------------------------
 
-/** Build the neighbourhood of `symbol` from the store's cached edges.
- *
- * Stdlib / method noise is dropped by resolving every `from` and `to`
- * against `definedNames` — the full set of symbols declared inside
- * the source.  A call whose counterpart isn't in that set is not a
- * project-internal edge and is silently discarded.
- *
- * Returns a `Neighbourhood` (always defined — empty lists when nothing
- * is found) so the caller decides how to render "no results". */
+/** Read one item's symbols without constructing source-wide search hits. */
+function symbolsForItem(store: ContextStore, sourceId: string, version: string, itemId: string) {
+  const key = { sourceId, version, itemId };
+  const cached = store.getSymbols(key);
+  if (cached) return cached;
+  const content = store.getContent(key);
+  // Absence is temporary: leave it uncached so later content can be indexed.
+  if (content === undefined) return [];
+  const language = detectLanguage(itemId);
+  let symbols: SymbolEntry[] = [];
+  if (language) {
+    try {
+      symbols = parseSymbols(language, content);
+    } catch {
+      // Match the context search contract: one unparseable file is not fatal.
+    }
+  }
+  store.setSymbols(key, symbols);
+  return symbols;
+}
+
+/** Resolve a complete neighbourhood without copying the whole symbol/edge index.
+ * Three linear passes retain only relevant counterpart names and query results.
+ * Auxiliary memory scales with indexed file IDs and this neighbourhood; the
+ * shared cache and complete result arrays still naturally scale with input size.
+ * Name resolution is case-sensitive and drops counterparts absent from the source. */
 export function buildNeighbourhood(
   store: ContextStore,
   sourceUrl: string,
   version: string,
   symbol: string
 ): Neighbourhood {
-  const scope = { sources: [{ sourceId: sourceUrl, version }] };
-
-  // 1. Full symbol set for this source → definedNames + location map.
-  const allSymbols = findSymbols('', scope, { maxResults: 5000, store });
-  const definedNames = new Set(allSymbols.map((h) => h.name));
-  const locationsByName = new Map<string, SymbolLocation[]>();
-  for (const hit of allSymbols) {
-    const locs = locationsByName.get(hit.name) ?? [];
-    locs.push({ file: hit.itemId, line: hit.startLine, kind: hit.kind });
-    locationsByName.set(hit.name, locs);
-  }
-
-  // 2. Walk every indexed item to collect all edges.
-  type RawCall = { from: string | null; to: string; itemId: string; line: number };
-  type RawImport = { itemId: string; names: string[] };
-
-  const allCalls: RawCall[] = [];
-  const allImports: RawImport[] = [];
-
-  for (const itemId of store.listIndexedItems(sourceUrl, version)) {
+  const items = store.listIndexedItems(sourceUrl, version);
+  const candidates = new Set<string>();
+  for (const itemId of items) {
     const edges = edgesForItem(store, sourceUrl, version, itemId);
     if (!edges) continue;
     for (const call of edges.calls) {
-      allCalls.push({ from: call.from, to: call.to, itemId, line: call.line });
+      if (call.to === symbol && call.from !== null) candidates.add(call.from);
+      if (call.from === symbol) candidates.add(call.to);
+    }
+  }
+
+  const definitions: SymbolLocation[] = [];
+  const definedNames = new Set<string>();
+  for (const itemId of items) {
+    for (const entry of symbolsForItem(store, sourceUrl, version, itemId)) {
+      if (entry.name === symbol) {
+        definitions.push({ file: itemId, line: entry.startLine, kind: entry.kind });
+      }
+      if (candidates.has(entry.name)) definedNames.add(entry.name);
+    }
+  }
+
+  const callers: CallerHit[] = [];
+  const seenCallers = new Set<string>();
+  const seenCallees = new Set<string>();
+  const importedBySet = new Set<string>();
+  for (const itemId of items) {
+    const edges = edgesForItem(store, sourceUrl, version, itemId);
+    if (!edges) continue;
+    for (const call of edges.calls) {
+      if (call.to === symbol && (call.from === null || definedNames.has(call.from))) {
+        const label = call.from ?? `<top-level:${itemId}>`;
+        const key = `${label}|${itemId}|${call.line}`;
+        if (!seenCallers.has(key)) {
+          seenCallers.add(key);
+          callers.push({ from: call.from ?? '<top-level>', file: itemId, line: call.line });
+        }
+      }
+      if (call.from === symbol && definedNames.has(call.to)) seenCallees.add(call.to);
     }
     for (const imp of edges.imports) {
-      allImports.push({ itemId, names: imp.names });
+      if (imp.names.includes(symbol)) importedBySet.add(itemId);
     }
   }
-
-  // 3. Definitions of the requested symbol.
-  const definitions = locationsByName.get(symbol) ?? [];
-
-  // 4. Callers — calls where `to === symbol` AND `from` is a defined symbol
-  //    (or the top-level sentinel null, which we map to the file itself).
-  const seenCallers = new Set<string>();
-  const callers: CallerHit[] = [];
-  for (const call of allCalls) {
-    if (call.to !== symbol) continue;
-    const fromName = call.from;
-    // Accept top-level calls (from === null) and calls from defined symbols.
-    if (fromName !== null && !definedNames.has(fromName)) continue;
-    const callerLabel = fromName ?? `<top-level:${call.itemId}>`;
-    const dedupeKey = `${callerLabel}|${call.itemId}|${call.line}`;
-    if (seenCallers.has(dedupeKey)) continue;
-    seenCallers.add(dedupeKey);
-    callers.push({
-      from: fromName ?? `<top-level>`,
-      file: call.itemId,
-      line: call.line,
-    });
-  }
-
-  // 5. Callees — calls where `from === symbol`, resolved to defined names only.
-  const seenCallees = new Set<string>();
-  for (const call of allCalls) {
-    if (call.from !== symbol) continue;
-    if (!definedNames.has(call.to)) continue; // drop stdlib / method noise
-    seenCallees.add(call.to);
-  }
-  const callees = [...seenCallees];
-
-  // 6. ImportedBy — files that import `symbol` by name.
-  const importedBySet = new Set<string>();
-  for (const imp of allImports) {
-    if (imp.names.includes(symbol)) {
-      importedBySet.add(imp.itemId);
-    }
-  }
-  const importedBy = [...importedBySet];
-
-  return { symbol, definitions, callers, callees, importedBy };
+  return {
+    symbol,
+    definitions,
+    callers,
+    callees: [...seenCallees],
+    importedBy: [...importedBySet],
+  };
 }
 
 // ---------------------------------------------------------------------------
