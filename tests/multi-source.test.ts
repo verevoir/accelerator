@@ -188,6 +188,60 @@ describe('MCP searches across independent repositories', () => {
     ]);
   });
 
+  it.each(['grep', 'find_symbol', 'code_graph'])(
+    'collects warnings only for truncated sources in %s without extra walks',
+    async (tool) => {
+      const sources = ['first', 'complete', 'last'].map(
+        (name) => `https://gitlab.com/warnings/${name}`
+      );
+      const getRepoTree = vi.fn(async (_env, source: string) => ({
+        entries: Array.from({ length: source === sources[2] ? 2 : 1 }, (_, i) => ({
+          path: `dir${i}`,
+          type: 'tree',
+        })),
+        truncated: source !== sources[1],
+      }));
+      vi.mocked(pickSourceAdapter).mockResolvedValue({ getRepoTree } as unknown as SourceAdapter);
+      const result = await tools[tool]({
+        sourceUrls: sources,
+        pattern: 'absent',
+        name: 'absent',
+        symbol: 'absent',
+      });
+      expect(result.content.slice(1).map(({ text }) => text)).toEqual([
+        `⚠ tree truncated at 1 entries [${sources[0]}]; results may be incomplete. Use list_files to inspect narrower directories.`,
+        `⚠ tree truncated at 2 entries [${sources[2]}]; results may be incomplete. Use list_files to inspect narrower directories.`,
+      ]);
+      expect(getRepoTree.mock.calls.map(([, source]) => source)).toEqual(sources);
+      if (tool !== 'code_graph') expect(JSON.parse(result.content[0].text)).toEqual([]);
+      else expect(result.content[0].text).toContain("no symbol 'absent' found");
+    }
+  );
+
+  it('keeps the visited-source warning when grep exhausts its hit budget', async () => {
+    const source = `https://gitlab.com/warnings/${root.split('/').pop()}`;
+    const getRepoTree = vi.fn(async () => ({
+      entries: [{ path: 'index.ts', type: 'blob' }],
+      truncated: true,
+    }));
+    const readFile = vi.fn(async () => ({ content: 'needle', sha: 'sha' }));
+    vi.mocked(pickSourceAdapter).mockImplementation(async (url) => {
+      if (url !== source) throw new Error('unvisited source');
+      return { getRepoTree, readFile } as unknown as SourceAdapter;
+    });
+    const result = await tools.grep({
+      sourceUrls: [source, source + '-later'],
+      pattern: 'needle',
+      maxResults: 1,
+    });
+    expect(JSON.parse(result.content[0].text)).toHaveLength(1);
+    expect(result.content.slice(1).map(({ text }) => text)).toEqual([
+      `⚠ tree truncated at 1 entries [${source}]; results may be incomplete. Use list_files to inspect narrower directories.`,
+    ]);
+    expect(getRepoTree).toHaveBeenCalledTimes(1);
+    expect(pickSourceAdapter).toHaveBeenCalledTimes(1);
+  });
+
   it('returns large grep result sets without exceeding function argument limits', async () => {
     const hitCount = 150_000;
     writeFileSync(join(core, 'index.ts'), '');

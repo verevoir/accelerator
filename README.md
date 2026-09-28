@@ -153,11 +153,13 @@ and identify the source. A shared `ref` applies to every source; omit it when
 including local working trees, which cannot read a git ref. Single-source calls
 retain their response format.
 
+Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. Each truncated source visited by a multi-source query contributes its own warning in source order; sources skipped after grep fills its hit budget are not traversed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
 `/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
-`/graph`, `/source-selection`, `/source-deadline`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
+`/graph`, `/tree-warning`, `/source-selection`, `/source-deadline`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
 `/loop/search`, `/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
 dependency direction is **capabilities → accelerator** (never the reverse), which
 keeps governance out of the commodity layer.
