@@ -12,7 +12,9 @@ import {
   deleteBlockSourceFile,
   commitFilesSource,
 } from '../mutate.js';
-import { queryCodeGraph } from '../graph.js';
+import { queryCodeGraph, queryMultiSourceCodeGraph } from '../graph.js';
+import { MAX_SOURCES, resolveSourceUrls, type SourceSelection } from '../source-selection.js';
+import { SEARCH_TIMEOUT_MS, withinSourceDeadline } from '../source-deadline.js';
 import { jsonText } from '../result.js';
 import { fileURLToPath } from 'node:url';
 import { isGitlabUrl, parseGitlabProjectUrl } from '@verevoir/sources/gitlab';
@@ -71,6 +73,58 @@ export function forkHead(sourceUrl: string, workingUrl: string, branch: string):
     return `${working.projectPath}:${branch}`;
   }
   return `${ghOwner(workingUrl)}:${branch}`;
+}
+
+const sourceSelectionSchema = {
+  sourceUrl: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or an HTTPS self-hosted host listed in GITLAB_HOSTS), or Notion (https://www.notion.so/<id>). Provide this or sourceUrls.'
+    ),
+  sourceUrls: z
+    .array(z.string().min(1))
+    .min(1)
+    .max(MAX_SOURCES)
+    .optional()
+    .describe(
+      `Up to ${MAX_SOURCES} sources to search together, in order: local paths (/abs/path or file://...), GitHub repos (https://github.com/owner/repo), GitLab projects (https://gitlab.com/group/project, or HTTPS self-hosted hosts listed in GITLAB_HOSTS), or Notion (https://www.notion.so/<id>). Each retains its own cache and tree budget; the count limit bounds aggregate work. Provide this or sourceUrl.`
+    ),
+};
+
+async function inSource<T>(sourceUrl: string, action: () => Promise<T>): Promise<T> {
+  try {
+    return await action();
+  } catch (cause) {
+    throw new Error(
+      `Source ${sourceUrl} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause }
+    );
+  }
+}
+
+async function selectedSources(selection: SourceSelection): Promise<string[]> {
+  const sources: string[] = [];
+  for (const sourceUrl of resolveSourceUrls(selection)) {
+    sources.push(await inSource(sourceUrl, async () => normalizeSourceUrl(sourceUrl)));
+  }
+  return [...new Set(sources)];
+}
+
+async function warmSelectedSources(sources: string[], ref?: string) {
+  const warnings: ReturnType<ReturnType<typeof observeTreeTruncation>['warnings']> = [];
+  const deadline = Date.now() + SEARCH_TIMEOUT_MS;
+  for (const sourceUrl of sources) {
+    await inSource(sourceUrl, () =>
+      withinSourceDeadline(sourceUrl, deadline, async (adapter) => {
+        const observed = observeTreeTruncation(adapter);
+        await warmSource(observed.adapter, resolveSourceEnv(sourceUrl), sourceUrl, { ref });
+        warnings.push(...observed.warnings());
+      })
+    );
+  }
+  return warnings;
 }
 
 export function registerSourceTools(server: ToolHost): void {
@@ -163,13 +217,9 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Search file contents for a pattern across an entire source on demand. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context. A truncated tree appends a second text content block warning that results may be incomplete.',
+        'Search file contents for a pattern across one or more sources on demand. Results include sourceId. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context. Each truncated source appends a warning text block that results may be incomplete.',
       inputSchema: {
-        sourceUrl: z
-          .string()
-          .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
-          ),
+        ...sourceSelectionSchema,
         pattern: z.string().describe('Plain-text substring to search for.'),
         ref: z
           .string()
@@ -178,19 +228,35 @@ export function registerSourceTools(server: ToolHost): void {
             'Git ref / branch / sha that scopes the cache lookup. Omit for default branch.'
           ),
         ignoreCase: z.boolean().optional().describe('Case-insensitive match. Defaults to false.'),
-        maxResults: z.number().optional().describe('Maximum hits to return. Defaults to 50.'),
+        maxResults: z
+          .number()
+          .optional()
+          .describe('Maximum total hits across sources, in source order. Defaults to 50.'),
       },
     },
-    async ({ sourceUrl, pattern, ref, ignoreCase, maxResults }) => {
-      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
-      const { adapter } = observed;
-      const env = resolveSourceEnv(sourceUrl);
-      const result = await grepSource(adapter, env, sourceUrl, pattern, {
-        ref,
-        ignoreCase,
-        maxResults,
-      });
-      return { content: [{ type: 'text', text: jsonText(result) }, ...observed.warnings()] };
+    async ({ sourceUrl, sourceUrls, pattern, ref, ignoreCase, maxResults }) => {
+      const sources = await selectedSources({ sourceUrl, sourceUrls });
+      const limit = maxResults ?? 50;
+      const result: Awaited<ReturnType<typeof grepSource>> = [];
+      const warnings: ReturnType<ReturnType<typeof observeTreeTruncation>['warnings']> = [];
+      const deadline = Date.now() + SEARCH_TIMEOUT_MS;
+      for (const src of sources) {
+        if (result.length >= limit) break;
+        const hits = await inSource(src, () =>
+          withinSourceDeadline(src, deadline, async (adapter) => {
+            const observed = observeTreeTruncation(adapter);
+            const hits = await grepSource(observed.adapter, resolveSourceEnv(src), src, pattern, {
+              ref,
+              ignoreCase,
+              maxResults: limit - result.length,
+            });
+            warnings.push(...observed.warnings());
+            return hits;
+          })
+        );
+        for (const hit of hits) result.push(hit);
+      }
+      return { content: [{ type: 'text', text: jsonText(result) }, ...warnings] };
     }
   );
 
@@ -202,13 +268,9 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Find where a named function, class, method, interface, type, or enum is defined — scans the whole source on demand, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range. A truncated tree appends a second text content block warning that results may be incomplete.',
+        'Find where a named function, class, method, interface, type, or enum is defined — scans each selected source on demand; results include sourceId, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range. Each truncated source appends a warning text block that results may be incomplete.',
       inputSchema: {
-        sourceUrl: z
-          .string()
-          .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
-          ),
+        ...sourceSelectionSchema,
         name: z.string().describe('Symbol name to search (substring match, case-insensitive).'),
         ref: z
           .string()
@@ -222,18 +284,15 @@ export function registerSourceTools(server: ToolHost): void {
           .describe('Restrict results to a specific symbol kind.'),
       },
     },
-    async ({ sourceUrl, name, ref, kind }) => {
-      const src = normalizeSourceUrl(sourceUrl);
-      const observed = observeTreeTruncation(await pickSourceAdapter(src));
-      const { adapter } = observed;
-      const env = resolveSourceEnv(src);
-      await warmSource(adapter, env, src, { ref });
+    async ({ sourceUrl, sourceUrls, name, ref, kind }) => {
+      const sources = await selectedSources({ sourceUrl, sourceUrls });
+      const warnings = await warmSelectedSources(sources, ref);
       const hits = findSymbols(name, {
-        sources: [{ sourceId: src, version: ref ?? '' }],
+        sources: sources.map((sourceId) => ({ sourceId, version: ref ?? '' })),
       });
       const filtered = kind ? hits.filter((h) => h.kind === kind) : hits;
       return {
-        content: [{ type: 'text', text: jsonText(filtered) }, ...observed.warnings()],
+        content: [{ type: 'text', text: jsonText(filtered) }, ...warnings],
       };
     }
   );
@@ -650,13 +709,9 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved to symbols defined in this source), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions. A truncated tree appends a second text content block warning that results may be incomplete.",
+        "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved across all selected sources; multi-source locations are source-labelled), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions. Each truncated source appends a warning text block that results may be incomplete.",
       inputSchema: {
-        sourceUrl: z
-          .string()
-          .describe(
-            'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or a self-hosted host), or Notion (https://www.notion.so/<id>).'
-          ),
+        ...sourceSelectionSchema,
         symbol: z.string().describe('Symbol name to look up in the code graph.'),
         ref: z
           .string()
@@ -666,14 +721,17 @@ export function registerSourceTools(server: ToolHost): void {
           ),
       },
     },
-    async ({ sourceUrl, symbol, ref }) => {
-      const src = normalizeSourceUrl(sourceUrl);
-      const observed = observeTreeTruncation(await pickSourceAdapter(src));
-      const { adapter } = observed;
-      const env = resolveSourceEnv(src);
-      await warmSource(adapter, env, src, { ref });
-      const text = queryCodeGraph(src, ref ?? '', symbol);
-      return { content: [{ type: 'text', text }, ...observed.warnings()] };
+    async ({ sourceUrl, sourceUrls, symbol, ref }) => {
+      const sources = await selectedSources({ sourceUrl, sourceUrls });
+      const warnings = await warmSelectedSources(sources, ref);
+      const text =
+        sourceUrls === undefined
+          ? queryCodeGraph(sources[0], ref ?? '', symbol)
+          : queryMultiSourceCodeGraph(
+              sources.map((sourceId) => ({ sourceId, version: ref ?? '' })),
+              symbol
+            );
+      return { content: [{ type: 'text', text }, ...warnings] };
     }
   );
 }

@@ -160,3 +160,35 @@ describe('renderNeighbourhood — foo', () => {
     expect(text).toMatch(FILE_B);
   });
 });
+
+describe('buildNeighbourhood — more than 5,000 symbols', () => {
+  let store: ContextStore;
+
+  beforeEach(() => {
+    store = createContextStore();
+    const padding = Array.from({ length: 5000 }, (_, i) => `export function padding${i}() {}`).join(
+      '\n'
+    );
+    store.setContent({ sourceId: SOURCE_ID, version: VERSION, itemId: 'a-padding.ts' }, padding);
+    store.setContent(
+      { sourceId: SOURCE_ID, version: VERSION, itemId: 'z-manuscript.ts' },
+      'export function countManuscriptWords() { return 42; }\n' +
+        'export function namedCaller() { return countManuscriptWords(); }\n'
+    );
+  });
+
+  it('finds a definition beyond the first 5,000 symbols', () => {
+    const nb = buildNeighbourhood(store, SOURCE_ID, VERSION, 'countManuscriptWords');
+    expect(nb.definitions).toEqual([{ file: 'z-manuscript.ts', line: 1, kind: 'function' }]);
+  });
+
+  it('retains a named caller beyond the first 5,000 symbols', () => {
+    const nb = buildNeighbourhood(store, SOURCE_ID, VERSION, 'countManuscriptWords');
+    expect(nb.callers).toEqual([{ from: 'namedCaller', file: 'z-manuscript.ts', line: 2 }]);
+  });
+
+  it('resolves a callee beyond the first 5,000 symbols', () => {
+    const nb = buildNeighbourhood(store, SOURCE_ID, VERSION, 'namedCaller');
+    expect(nb.callees).toEqual(['countManuscriptWords']);
+  });
+});
