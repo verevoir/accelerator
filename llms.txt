@@ -106,6 +106,10 @@ Native bash sits in its own shell class (never implied by write-local); grant it
 This is a policy + least-privilege + audit layer, NOT a sandbox — the real isolation boundary
 is running pi in a container. See docs/2026-07-24-pi-plugin-and-permissions.md.
 
+## Named source sets
+
+Named source sets: project manifests accept `sourceSets: { leafset: "repositories/*", sync: ["repositories/core", "https://gitlab.com/group/schema"] }`. `grep`, `find_symbol`, and `code_graph` accept exactly one of sourceUrl/sourceUrls/sourceSet. Local set entries must be relative directories confined by canonical realpath to the manifest directory; absolute paths, file URLs, and escaping parent/symlink targets fail before routing. Internal symlinks resolve to canonical paths. Final /* expands immediate directories in sorted order (no other globs), empty matches fail. Explicit HTTP(S) repository entries use normal backend routing. Explicit sourceUrl/sourceUrls access rules are unchanged. Named sets retain sourceUrls result labelling even for one repository. Expansion is limited to 100 source entries before deduplication; larger sets fail before any backend call. Available names appear in server instructions.
+
 ## Tree completeness
 
 Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. Each truncated source visited by a multi-source query contributes its own warning in source order; sources skipped after grep fills its hit budget are not traversed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.

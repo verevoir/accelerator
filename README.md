@@ -153,6 +153,25 @@ and identify the source. A shared `ref` applies to every source; omit it when
 including local working trees, which cannot read a git ref. Single-source calls
 retain their response format.
 
+### Named source sets
+
+Define repository groups in the selected project manifest (`verevoir-mcp.json`, `aigency.json`, or the `verevoir-mcp` block in `AGENTS.md`):
+
+```json
+{
+  "sourceSets": {
+    "leafset": "repositories/*",
+    "sync": ["repositories/core", "https://gitlab.com/group/schema"]
+  }
+}
+```
+
+Call `code_graph({ sourceSet: "leafset", symbol: "threeWayMerge" })`, or pass `sourceSet` to `grep` and `find_symbol`. Provide exactly one of `sourceUrl`, `sourceUrls`, or `sourceSet`. Named sets use the same source-labelled results as `sourceUrls`, including singleton sets, and keep each repository's cache and walk budget independent.
+
+Named sets expand to at most 100 source entries before deduplication, matching the `sourceUrls` limit. Larger sets fail before any backend is called.
+
+Local entries must be relative directory paths within the manifest directory, regardless of the server's working directory. Absolute paths and file URLs are rejected in named sets. Canonical paths are checked before routing: `..` or symlink targets outside that directory are rejected, including wildcard roots and matches. Internal symlinks resolve to their canonical targets. The only glob supported is a final `/*`: immediate directories are expanded in sorted order, files are ignored, and no matching directories is an error. Explicit HTTP(S) repository URLs remain literal sources subject to normal backend host and credential routing. Explicit `sourceUrl`/`sourceUrls` selections retain their existing access rules; containment applies only to manifest-defined local sets. Unknown names, malformed sets, and unsupported globs fail explicitly. Server instructions list available set names without expanding them.
+
 Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. Each truncated source visited by a multi-source query contributes its own warning in source order; sources skipped after grep fills its hit budget are not traversed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
 
 ## Library (subpath exports)

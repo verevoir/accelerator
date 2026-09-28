@@ -81,7 +81,14 @@ const sourceSelectionSchema = {
     .min(1)
     .optional()
     .describe(
-      'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or an HTTPS self-hosted host listed in GITLAB_HOSTS), or Notion (https://www.notion.so/<id>). Provide this or sourceUrls.'
+      'Source, auto-routed by form: local path (/abs/path or file://...), GitHub repo (https://github.com/owner/repo), GitLab project (https://gitlab.com/group/project, or an HTTPS self-hosted host listed in GITLAB_HOSTS), or Notion (https://www.notion.so/<id>). Provide exactly one of sourceUrl, sourceUrls, or sourceSet.'
+    ),
+  sourceSet: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'Named source set from the project manifest, expanding to at most 100 source entries before deduplication. Local entries must be relative paths confined to the manifest directory, including symlink targets; a final /* expands immediate directories. Absolute paths and file URLs are rejected in named sets. Explicit HTTP(S) entries use normal backend routing. Provide exactly one of sourceSet, sourceUrl, or sourceUrls.'
     ),
   sourceUrls: z
     .array(z.string().min(1))
@@ -89,7 +96,7 @@ const sourceSelectionSchema = {
     .max(MAX_SOURCES)
     .optional()
     .describe(
-      `Up to ${MAX_SOURCES} sources to search together, in order: local paths (/abs/path or file://...), GitHub repos (https://github.com/owner/repo), GitLab projects (https://gitlab.com/group/project, or HTTPS self-hosted hosts listed in GITLAB_HOSTS), or Notion (https://www.notion.so/<id>). Each retains its own cache and tree budget; the count limit bounds aggregate work. Provide this or sourceUrl.`
+      `Up to ${MAX_SOURCES} sources to search together, in order: local paths (/abs/path or file://...), GitHub repos (https://github.com/owner/repo), GitLab projects (https://gitlab.com/group/project, or HTTPS self-hosted hosts listed in GITLAB_HOSTS), or Notion (https://www.notion.so/<id>). Each retains its own cache and tree budget; the count limit bounds aggregate work. Provide exactly one of sourceUrl, sourceUrls, or sourceSet.`
     ),
 };
 
@@ -234,8 +241,8 @@ export function registerSourceTools(server: ToolHost): void {
           .describe('Maximum total hits across sources, in source order. Defaults to 50.'),
       },
     },
-    async ({ sourceUrl, sourceUrls, pattern, ref, ignoreCase, maxResults }) => {
-      const sources = await selectedSources({ sourceUrl, sourceUrls });
+    async ({ sourceUrl, sourceUrls, sourceSet, pattern, ref, ignoreCase, maxResults }) => {
+      const sources = await selectedSources({ sourceUrl, sourceUrls, sourceSet });
       const limit = maxResults ?? 50;
       const result: Awaited<ReturnType<typeof grepSource>> = [];
       const warnings: ReturnType<ReturnType<typeof observeTreeTruncation>['warnings']> = [];
@@ -284,8 +291,8 @@ export function registerSourceTools(server: ToolHost): void {
           .describe('Restrict results to a specific symbol kind.'),
       },
     },
-    async ({ sourceUrl, sourceUrls, name, ref, kind }) => {
-      const sources = await selectedSources({ sourceUrl, sourceUrls });
+    async ({ sourceUrl, sourceUrls, sourceSet, name, ref, kind }) => {
+      const sources = await selectedSources({ sourceUrl, sourceUrls, sourceSet });
       const warnings = await warmSelectedSources(sources, ref);
       const hits = findSymbols(name, {
         sources: sources.map((sourceId) => ({ sourceId, version: ref ?? '' })),
@@ -721,11 +728,11 @@ export function registerSourceTools(server: ToolHost): void {
           ),
       },
     },
-    async ({ sourceUrl, sourceUrls, symbol, ref }) => {
-      const sources = await selectedSources({ sourceUrl, sourceUrls });
+    async ({ sourceUrl, sourceUrls, sourceSet, symbol, ref }) => {
+      const sources = await selectedSources({ sourceUrl, sourceUrls, sourceSet });
       const warnings = await warmSelectedSources(sources, ref);
       const text =
-        sourceUrls === undefined
+        sourceUrl !== undefined
           ? queryCodeGraph(sources[0], ref ?? '', symbol)
           : queryMultiSourceCodeGraph(
               sources.map((sourceId) => ({ sourceId, version: ref ?? '' })),
