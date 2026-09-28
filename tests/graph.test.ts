@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as code from '@verevoir/context/code';
 import { createContextStore } from '@verevoir/context';
 import type { ContextStore } from '@verevoir/context';
 import { buildNeighbourhood, renderNeighbourhood } from '../src/graph.js';
+
+vi.mock('@verevoir/context/code', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@verevoir/context/code')>();
+  return { ...actual };
+});
 
 // ---------------------------------------------------------------------------
 // Synthetic TS sources
@@ -159,4 +165,128 @@ describe('renderNeighbourhood — foo', () => {
     expect(text).toMatch(/imported by:/);
     expect(text).toMatch(FILE_B);
   });
+});
+
+describe('buildNeighbourhood — more than 5,000 symbols', () => {
+  let store: ContextStore;
+
+  beforeEach(() => {
+    store = createContextStore();
+    const padding = Array.from({ length: 5000 }, (_, i) => `export function padding${i}() {}`).join(
+      '\n'
+    );
+    store.setContent({ sourceId: SOURCE_ID, version: VERSION, itemId: 'a-padding.ts' }, padding);
+    store.setContent(
+      { sourceId: SOURCE_ID, version: VERSION, itemId: 'z-manuscript.ts' },
+      'export function countManuscriptWords() { return 42; }\n' +
+        'export function namedCaller() { return countManuscriptWords(); }\n'
+    );
+  });
+
+  it('finds a definition beyond the first 5,000 symbols', () => {
+    const nb = buildNeighbourhood(store, SOURCE_ID, VERSION, 'countManuscriptWords');
+    expect(nb.definitions).toEqual([{ file: 'z-manuscript.ts', line: 1, kind: 'function' }]);
+  });
+
+  it('retains a named caller beyond the first 5,000 symbols', () => {
+    const nb = buildNeighbourhood(store, SOURCE_ID, VERSION, 'countManuscriptWords');
+    expect(nb.callers).toEqual([{ from: 'namedCaller', file: 'z-manuscript.ts', line: 2 }]);
+  });
+
+  it('resolves a callee beyond the first 5,000 symbols', () => {
+    const nb = buildNeighbourhood(store, SOURCE_ID, VERSION, 'namedCaller');
+    expect(nb.callees).toEqual(['countManuscriptWords']);
+  });
+});
+
+describe('buildNeighbourhood — query-local indexing', () => {
+  it.each(['symbols', 'calls'])('does not materialize unrelated %s in a noisy index', (kind) => {
+    const store = seedStore();
+    const key = { sourceId: SOURCE_ID, version: VERSION, itemId: 'noise.ts' };
+    store.setContent(key, '');
+    store.setSymbols(
+      key,
+      Array.from({ length: 6000 }, (_, index) => ({
+        name: `noise${index}`,
+        kind: 'function' as const,
+        get startLine(): number {
+          if (kind === 'symbols') throw new Error('unrelated symbol location materialized');
+          return 1;
+        },
+        endLine: 1,
+      }))
+    );
+    store.setEdges(key, {
+      imports: [],
+      calls: Array.from({ length: 6000 }, (_, index) => ({
+        from: `noise${index}`,
+        to: 'irrelevant',
+        get line(): number {
+          if (kind === 'calls') throw new Error('unrelated call site materialized');
+          return 1;
+        },
+      })),
+    });
+    expect(buildNeighbourhood(store, SOURCE_ID, VERSION, 'bar')).toEqual({
+      symbol: 'bar',
+      definitions: [{ file: FILE_A, line: 5, kind: 'function' }],
+      callers: [],
+      callees: ['foo'],
+      importedBy: [],
+    });
+  });
+
+  it('keeps exact case when resolving definitions and counterpart names', () => {
+    const store = createContextStore();
+    store.setContent(
+      { sourceId: SOURCE_ID, version: VERSION, itemId: FILE_A },
+      'export function Foo() {}\nexport function caller() { foo(); Foo(); }'
+    );
+    expect(buildNeighbourhood(store, SOURCE_ID, VERSION, 'caller').callees).toEqual(['Foo']);
+    expect(buildNeighbourhood(store, SOURCE_ID, VERSION, 'foo').definitions).toEqual([]);
+  });
+
+  it('caches unsupported and failed parses as empty symbols without losing valid files', () => {
+    const store = seedStore();
+    const unsupported = { sourceId: SOURCE_ID, version: VERSION, itemId: 'notes.txt' };
+    const malformed = { ...unsupported, itemId: 'broken.ts' };
+    store.setContent(unsupported, 'function foo() {}');
+    store.setContent(malformed, 'broken parser fixture');
+    const parse = code.parseSymbols;
+    const spy = vi.spyOn(code, 'parseSymbols').mockImplementation((language, content) => {
+      if (content === 'broken parser fixture') throw new Error('parse failed');
+      return parse(language, content);
+    });
+    try {
+      expect(buildNeighbourhood(store, SOURCE_ID, VERSION, 'foo').definitions).toEqual([
+        { file: FILE_A, line: 1, kind: 'function' },
+      ]);
+      expect([store.getSymbols(unsupported), store.getSymbols(malformed)]).toEqual([[], []]);
+      spy.mockClear();
+      expect(buildNeighbourhood(store, SOURCE_ID, VERSION, 'foo').definitions).toEqual([
+        { file: FILE_A, line: 1, kind: 'function' },
+      ]);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+it('leaves temporarily unavailable indexed content uncached and discovers it when supplied', () => {
+  const store = seedStore();
+  const pending = { sourceId: SOURCE_ID, version: VERSION, itemId: 'pending.ts' };
+  const view: ContextStore = {
+    ...store,
+    listIndexedItems: (sourceId, version) =>
+      [...new Set([...store.listIndexedItems(sourceId, version), pending.itemId])].sort(),
+  };
+  const original = [{ file: FILE_A, line: 1, kind: 'function' }];
+  expect(buildNeighbourhood(view, SOURCE_ID, VERSION, 'foo').definitions).toEqual(original);
+  expect(store.getSymbols(pending)).toBeUndefined();
+  store.setContent(pending, 'export function foo() {}');
+  expect(buildNeighbourhood(view, SOURCE_ID, VERSION, 'foo').definitions).toEqual([
+    { file: pending.itemId, line: 1, kind: 'function' },
+    ...original,
+  ]);
 });
