@@ -290,3 +290,24 @@ it('keeps explicit source selectors independent of manifest containment', () => 
     resolveSourceUrls({ sourceUrls: [outside, pathToFileURL(outside).href] }, manifest)
   ).toEqual([outside, pathToFileURL(outside).href]);
 });
+
+it.each(['grep', 'find_symbol', 'code_graph'])(
+  '%s preserves truncation warnings after named-set expansion',
+  async (tool) => {
+    const getRepoTree = vi.fn(async (_env: unknown, source: string) => ({
+      entries: [],
+      truncated: source === schema,
+    }));
+    vi.spyOn(router, 'pickSourceAdapter').mockResolvedValue({ getRepoTree } as never);
+    const result = await tools[tool]({
+      sourceSet: 'leafset',
+      pattern: 'absent',
+      name: 'absent',
+      symbol: 'absent',
+    });
+    expect(result.content.slice(1).map(({ text }) => text)).toEqual([
+      `⚠ tree truncated at 0 entries [${schema}]; results may be incomplete. Use list_files to inspect narrower directories.`,
+    ]);
+    expect(getRepoTree.mock.calls.map(([, source]) => source)).toEqual([core, schema]);
+  }
+);

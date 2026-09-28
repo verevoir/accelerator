@@ -1,3 +1,4 @@
+import { observeTreeTruncation } from '../tree-warning.js';
 import { z } from 'zod';
 import type { ToolHost } from '../permissions.js';
 import { grepSource, warmSource, wrapWithCache } from '@verevoir/context';
@@ -118,15 +119,19 @@ async function selectedSources(selection: SourceSelection): Promise<string[]> {
   return [...new Set(sources)];
 }
 
-async function warmSelectedSources(sources: string[], ref?: string): Promise<void> {
+async function warmSelectedSources(sources: string[], ref?: string) {
+  const warnings: ReturnType<ReturnType<typeof observeTreeTruncation>['warnings']> = [];
   const deadline = Date.now() + SEARCH_TIMEOUT_MS;
   for (const sourceUrl of sources) {
     await inSource(sourceUrl, () =>
-      withinSourceDeadline(sourceUrl, deadline, (adapter) =>
-        warmSource(adapter, resolveSourceEnv(sourceUrl), sourceUrl, { ref })
-      )
+      withinSourceDeadline(sourceUrl, deadline, async (adapter) => {
+        const observed = observeTreeTruncation(adapter);
+        await warmSource(observed.adapter, resolveSourceEnv(sourceUrl), sourceUrl, { ref });
+        warnings.push(...observed.warnings());
+      })
     );
   }
+  return warnings;
 }
 
 export function registerSourceTools(server: ToolHost): void {
@@ -192,7 +197,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Fetch the full file tree for a source (local path, GitHub repo, GitLab project, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag.',
+        'Fetch the full file tree for a source (local path, GitHub repo, GitLab project, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag. A truncated tree appends a second text content block warning that results may be incomplete.',
       inputSchema: {
         sourceUrl: z
           .string()
@@ -203,10 +208,11 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, ref }) => {
-      const adapter = await pickSourceAdapter(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
+      const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
       const result = await adapter.getRepoTree(env, sourceUrl, ref);
-      return { content: [{ type: 'text', text: jsonText(result) }] };
+      return { content: [{ type: 'text', text: jsonText(result) }, ...observed.warnings()] };
     }
   );
 
@@ -218,7 +224,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Search file contents for a pattern across one or more sources on demand. Results include sourceId. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context.',
+        'Search file contents for a pattern across one or more sources on demand. Results include sourceId. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context. Each truncated source appends a warning text block that results may be incomplete.',
       inputSchema: {
         ...sourceSelectionSchema,
         pattern: z.string().describe('Plain-text substring to search for.'),
@@ -239,21 +245,25 @@ export function registerSourceTools(server: ToolHost): void {
       const sources = await selectedSources({ sourceUrl, sourceUrls, sourceSet });
       const limit = maxResults ?? 50;
       const result: Awaited<ReturnType<typeof grepSource>> = [];
+      const warnings: ReturnType<ReturnType<typeof observeTreeTruncation>['warnings']> = [];
       const deadline = Date.now() + SEARCH_TIMEOUT_MS;
       for (const src of sources) {
         if (result.length >= limit) break;
         const hits = await inSource(src, () =>
-          withinSourceDeadline(src, deadline, (adapter) =>
-            grepSource(adapter, resolveSourceEnv(src), src, pattern, {
+          withinSourceDeadline(src, deadline, async (adapter) => {
+            const observed = observeTreeTruncation(adapter);
+            const hits = await grepSource(observed.adapter, resolveSourceEnv(src), src, pattern, {
               ref,
               ignoreCase,
               maxResults: limit - result.length,
-            })
-          )
+            });
+            warnings.push(...observed.warnings());
+            return hits;
+          })
         );
         for (const hit of hits) result.push(hit);
       }
-      return { content: [{ type: 'text', text: jsonText(result) }] };
+      return { content: [{ type: 'text', text: jsonText(result) }, ...warnings] };
     }
   );
 
@@ -265,7 +275,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Find where a named function, class, method, interface, type, or enum is defined — scans each selected source on demand; results include sourceId, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range.',
+        'Find where a named function, class, method, interface, type, or enum is defined — scans each selected source on demand; results include sourceId, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range. Each truncated source appends a warning text block that results may be incomplete.',
       inputSchema: {
         ...sourceSelectionSchema,
         name: z.string().describe('Symbol name to search (substring match, case-insensitive).'),
@@ -283,13 +293,13 @@ export function registerSourceTools(server: ToolHost): void {
     },
     async ({ sourceUrl, sourceUrls, sourceSet, name, ref, kind }) => {
       const sources = await selectedSources({ sourceUrl, sourceUrls, sourceSet });
-      await warmSelectedSources(sources, ref);
+      const warnings = await warmSelectedSources(sources, ref);
       const hits = findSymbols(name, {
         sources: sources.map((sourceId) => ({ sourceId, version: ref ?? '' })),
       });
       const filtered = kind ? hits.filter((h) => h.kind === kind) : hits;
       return {
-        content: [{ type: 'text', text: jsonText(filtered) }],
+        content: [{ type: 'text', text: jsonText(filtered) }, ...warnings],
       };
     }
   );
@@ -706,7 +716,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved across all selected sources; multi-source locations are source-labelled), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions.",
+        "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved across all selected sources; multi-source locations are source-labelled), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions. Each truncated source appends a warning text block that results may be incomplete.",
       inputSchema: {
         ...sourceSelectionSchema,
         symbol: z.string().describe('Symbol name to look up in the code graph.'),
@@ -720,7 +730,7 @@ export function registerSourceTools(server: ToolHost): void {
     },
     async ({ sourceUrl, sourceUrls, sourceSet, symbol, ref }) => {
       const sources = await selectedSources({ sourceUrl, sourceUrls, sourceSet });
-      await warmSelectedSources(sources, ref);
+      const warnings = await warmSelectedSources(sources, ref);
       const text =
         sourceUrl !== undefined
           ? queryCodeGraph(sources[0], ref ?? '', symbol)
@@ -728,7 +738,7 @@ export function registerSourceTools(server: ToolHost): void {
               sources.map((sourceId) => ({ sourceId, version: ref ?? '' })),
               symbol
             );
-      return { content: [{ type: 'text', text }] };
+      return { content: [{ type: 'text', text }, ...warnings] };
     }
   );
 }
