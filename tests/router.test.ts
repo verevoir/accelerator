@@ -49,8 +49,56 @@ describe('pickSourceAdapter', () => {
     expect(typeof adapter.readFile).toBe('function');
   });
 
+  /** Drive a real read through the routed adapter with fetch stubbed, and
+   * return the URL it hit — proof of WHICH backend the router chose, not merely
+   * that it returned something adapter-shaped. */
+  async function hostHitBy(sourceUrl: string): Promise<string> {
+    const fetchMock = vi.fn(async () =>
+      Response.json({ content: '', encoding: 'base64', blob_id: 'b' })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const adapter = await pickSourceAdapter(sourceUrl);
+      await adapter.readFile(
+        { token: 't', forkOrg: '' },
+        sourceUrl,
+        `probe-${Math.random()}`,
+        'main'
+      );
+      return String((fetchMock.mock.calls[0] as unknown[])[0]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it('routes a gitlab.com URL to the GitLab API', async () => {
+    expect(await hostHitBy('https://gitlab.com/group/sub/repo')).toMatch(
+      /^https:\/\/gitlab\.com\/api\/v4\/projects\/group%2Fsub%2Frepo\//
+    );
+  });
+
+  it('routes a self-hosted host listed in GITLAB_HOSTS to that instance', async () => {
+    vi.stubEnv('GITLAB_HOSTS', 'code.example.com');
+    try {
+      expect(await hostHitBy('https://code.example.com/team/repo')).toMatch(
+        /^https:\/\/code\.example\.com\/api\/v4\//
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('does NOT route an unlisted gitlab-looking host (it would be sent the token)', async () => {
+    await expect(pickSourceAdapter('https://gitlab.com.evil.io/a/b')).rejects.toThrow(
+      'Unsupported source URL'
+    );
+    await expect(pickSourceAdapter('https://gitlab.example.com/a/b')).rejects.toThrow(
+      'Unsupported source URL'
+    );
+  });
+
   it('throws for an unsupported URL', async () => {
-    await expect(pickSourceAdapter('https://gitlab.com/owner/repo')).rejects.toThrow(
+    await expect(pickSourceAdapter('https://bitbucket.org/owner/repo')).rejects.toThrow(
       'Unsupported source URL'
     );
   });
@@ -316,6 +364,61 @@ describe('resolveSourceEnv — the GitHub credential', () => {
     const resolveSourceEnv = await credentialEnv({ ghScript: GH_FAILS_THEN_SUCCEEDS });
     expect(() => resolveSourceEnv(GITHUB_SOURCE)).toThrow(/GITHUB_TOKEN/);
     expect(() => resolveSourceEnv(GITHUB_SOURCE)).toThrow(/GITHUB_TOKEN/);
+  });
+});
+
+describe('resolveSourceEnv — backends are independent', () => {
+  const saved = { ...process.env };
+  const dirs: string[] = [];
+  afterEach(() => {
+    process.env = { ...saved };
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  async function fresh(env: Record<string, string | undefined>) {
+    for (const k of [
+      'GITHUB_TOKEN',
+      'NOTION_API_KEY',
+      'GITLAB_TOKEN',
+      'GITLAB_FORK_NAMESPACE',
+      'SOURCE_FORK_ORG',
+    ]) {
+      delete process.env[k];
+    }
+    // No `gh` on PATH: a GitHub credential is genuinely unavailable.
+    const dir = mkdtempSync(join(tmpdir(), 'mcp-router-nogh-'));
+    dirs.push(dir);
+    process.env.PATH = dir;
+    Object.assign(process.env, env);
+    vi.resetModules();
+    return (await import('../src/router.js')).resolveSourceEnv;
+  }
+
+  it('resolves a GitLab source with no GitHub or Notion credential configured', async () => {
+    const resolveSourceEnv = await fresh({
+      GITLAB_TOKEN: ' glpat-x ',
+      GITLAB_FORK_NAMESPACE: 'forks',
+    });
+    expect(resolveSourceEnv('https://gitlab.com/g/r')).toEqual({
+      token: 'glpat-x',
+      forkOrg: 'forks',
+    });
+  });
+
+  it('resolves a GitLab source anonymously when GITLAB_TOKEN is unset (public reads)', async () => {
+    const resolveSourceEnv = await fresh({});
+    expect(resolveSourceEnv('https://gitlab.com/g/r')).toEqual({ token: '', forkOrg: '' });
+  });
+
+  it('never hands the GitLab token to a GitHub or Notion source', async () => {
+    const resolveSourceEnv = await fresh({ GITLAB_TOKEN: 'glpat-x' });
+    expect(() => resolveSourceEnv('https://github.com/o/r')).toThrow(/GITHUB_TOKEN/);
+    expect(() => resolveSourceEnv('https://www.notion.so/abc')).toThrow(/NOTION_API_KEY/);
+  });
+
+  it('resolves a GitHub source with no GitLab or Notion credential configured', async () => {
+    const resolveSourceEnv = await fresh({ GITHUB_TOKEN: 'gho_x' });
+    expect(resolveSourceEnv('https://github.com/o/r')).toMatchObject({ token: 'gho_x' });
   });
 });
 

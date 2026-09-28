@@ -41,13 +41,13 @@ Because pi runs tools in-process, the plugin ships an **annotation-driven
 least-privilege scope layer** so a client can run pi with only the tool classes
 they intend to grant. Tools are grouped into five classes:
 
-| Class          | Tools                                                               |
-| -------------- | ------------------------------------------------------------------- |
-| `read`         | every `readOnlyHint` tool — the reads and board queries             |
-| `write-local`  | `write_file`, `edit_file`, `multi_edit`, `insert`, `delete_block`   |
-| `write-github` | `commit_files`, `ensure_fork`, `ensure_branch`, `open_pull_request` |
-| `cards-write`  | `create_card`, `update_card`, `move_card`, `add_comment`            |
-| `shell`        | no accelerator tools — gates only pi's native `bash` (see below)    |
+| Class          | Tools                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------- |
+| `read`         | every `readOnlyHint` tool — the reads and board queries                                 |
+| `write-local`  | `write_file`, `edit_file`, `multi_edit`, `insert`, `delete_block`                       |
+| `write-github` | `commit_files`, `ensure_fork`, `ensure_branch`, `open_pull_request` (GitHub and GitLab) |
+| `cards-write`  | `create_card`, `update_card`, `move_card`, `add_comment`                                |
+| `shell`        | no accelerator tools — gates only pi's native `bash` (see below)                        |
 
 Two environment knobs control the scope:
 
@@ -93,17 +93,22 @@ config and a needless secret exposure. That asymmetry is deliberate: the split
 lets you hand the commodity server the keys that read your code and boards, and
 keep the model keys on the moat.
 
-| Env var                                                | Why the server needs it                                                                                                                                                                                                                           |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GITHUB_TOKEN`                                         | GitHub source adapter — `read_file`/`grep`/`find_symbol`/`code_graph`, and `write_file`/`edit_file`/`multi_edit`/`insert`/`delete_block`/`commit_files`/`ensure_fork`/`ensure_branch`/`open_pull_request`.                                        |
-| `NOTION_API_KEY`                                       | Notion source (pages as a file tree) **and** the Notion work-tracker board (`list_cards`/`create_card`/…).                                                                                                                                        |
-| `TRELLO_API_KEY`, `TRELLO_API_TOKEN`, `TRELLO_REFERER` | Trello work-tracker backend, when the board is Trello.                                                                                                                                                                                            |
-| `AIGENCY_AUDIT`, `AIGENCY_AUDIT_DIR`                   | Emit audit spans (the shared telemetry lib lives here) and where to write them.                                                                                                                                                                   |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                          | OTLP export of those spans to a collector.                                                                                                                                                                                                        |
-| `PORT`, `HOST`                                         | The `verevoir-accelerator-http` bin only: its listen port (default `3000`) and bind address (default `127.0.0.1`; exposing off-box is a deliberate hosting choice). The `startHttp()` library API instead defaults the port to `0` (OS-assigned). |
+| Env var                                                | Why the server needs it                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITHUB_TOKEN`                                         | GitHub source adapter — `read_file`/`grep`/`find_symbol`/`code_graph`, and `write_file`/`edit_file`/`multi_edit`/`insert`/`delete_block`/`commit_files`/`ensure_fork`/`ensure_branch`/`open_pull_request`.                                                                                                                                                                              |
+| `GITLAB_TOKEN`                                         | GitLab source adapter — the same source tools as GitHub, with `open_pull_request` opening a merge request. `read_api` scope for reads, `api` for writes. Optional for public projects.                                                                                                                                                                                                  |
+| `GITLAB_HOSTS`, `GITLAB_FORK_NAMESPACE`                | Self-hosted GitLab hostnames (comma-separated; gitlab.com is always recognised). Only these hosts route to GitLab — HTTPS only, no lookalike matching — because every routed host is sent `GITLAB_TOKEN` (one token serves every listed host, so give projects on different instances separate configs), and the group `ensure_fork` forks into (default: the token owner's namespace). |
+| `NOTION_API_KEY`                                       | Notion source (pages as a file tree) **and** the Notion work-tracker board (`list_cards`/`create_card`/…).                                                                                                                                                                                                                                                                              |
+| `TRELLO_API_KEY`, `TRELLO_API_TOKEN`, `TRELLO_REFERER` | Trello work-tracker backend, when the board is Trello.                                                                                                                                                                                                                                                                                                                                  |
+| `AIGENCY_AUDIT`, `AIGENCY_AUDIT_DIR`                   | Emit audit spans (the shared telemetry lib lives here) and where to write them.                                                                                                                                                                                                                                                                                                         |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                          | OTLP export of those spans to a collector.                                                                                                                                                                                                                                                                                                                                              |
+| `PORT`, `HOST`                                         | The `verevoir-accelerator-http` bin only: its listen port (default `3000`) and bind address (default `127.0.0.1`; exposing off-box is a deliberate hosting choice). The `startHttp()` library API instead defaults the port to `0` (OS-assigned).                                                                                                                                       |
 
-Local paths and public GitHub repos need no token; the tokens gate private
-sources and writes.
+Local paths and public GitLab projects need no token; GitHub needs `GITHUB_TOKEN`
+(or a logged-in `gh`, below). The tokens gate private sources and writes. Each
+credential is read only when a URL routes to its backend, so a project sets just
+the ones it uses — a GitLab-only project needs no GitHub or Notion credential,
+and a project without Notion never touches `NOTION_API_KEY`.
 
 When `GITHUB_TOKEN` is unset the server falls back to `gh auth token`, so a
 developer already logged into the `gh` CLI needs no further setup. That is a
