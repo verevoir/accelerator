@@ -53,13 +53,42 @@ case "$BASE_REF" in
 esac
 
 # CI runners always have coreutils timeout; dev machines running the tests may not.
-if command -v timeout >/dev/null 2>&1; then bounded() { timeout "$@"; }; else bounded() { shift; "$@"; }; fi
+# Fail HARD when it is absent: silently dropping the bound would shift the timeout from
+# each individual git op to the whole step envelope — the step's 2-minute ceiling becomes
+# the only defence against a hung remote, and a hung fetch would hold the entire job.
+if command -v timeout >/dev/null 2>&1; then
+  bounded() { timeout "$@"; }
+else
+  echo "::error title=timeout unavailable::coreutils timeout is required but was not found in PATH. Failing closed."
+  exit 1
+fi
 
 # Local git ops (merge-base, rev-parse) are near-instant; bound them anyway, but small
 # enough that their sum with the 60s network fetch (60 + 10 + 10 + 10 = 90s) stays under
 # the workflow step's 2-minute envelope, so each per-call bound actually binds before the
 # step timeout does. Env-overridable so a test can shrink it and drive a slow-git shim.
-GIT_OP_TIMEOUT="${GIT_OP_TIMEOUT:-10}"
+#
+# Non-colon form (${VAR-default}) so an explicitly-empty GIT_OP_TIMEOUT='' is passed
+# through to the validator below rather than silently replaced by the default — which
+# would leave the '' arm of the validator unreachable.
+GIT_OP_TIMEOUT="${GIT_OP_TIMEOUT-10}"
+# Validate: a non-empty string of digits with NO leading zero. Three arms, and the
+# third is deliberately WIDER than "not zero":
+#   ''        nothing to bound with.
+#   *[!0-9]*  any non-digit. GIT_OP_TIMEOUT is interpolated straight onto the command
+#             line, so 'abc' or '10s' corrupts it.
+#   0*        ANY leading zero. That covers '0' and '00' — where 'timeout 0 cmd' means
+#             NO limit, the fail-open this guard exists to close — but it also rejects
+#             '05', which would otherwise be a perfectly good 5-second bound. Refusing
+#             the whole shape keeps the guard one unambiguous pattern and turns away
+#             octal-looking input outright, which is worth more than accepting a
+#             leading-zero spelling nobody writes on purpose.
+case "$GIT_OP_TIMEOUT" in
+  '' | *[!0-9]* | 0*)
+    echo "::error title=Invalid GIT_OP_TIMEOUT::GIT_OP_TIMEOUT must be a positive integer with no leading zero (got: ${#GIT_OP_TIMEOUT} chars). Failing closed."
+    exit 1
+    ;;
+esac
 
 # The fetch must not fail the script (set -e): a deleted/renamed base ref is exactly
 # the case the frozen-sha fallback below exists for.
