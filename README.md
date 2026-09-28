@@ -140,11 +140,13 @@ invalidateWrittenFile can block indefinitely while resolving local aliases;
 the async timeout does not apply to them. The cache subpath also exposes
 invalidateCanonicalWrittenFile for identities already resolved before a write.
 
+Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
 `/source-url`, `/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
-`/graph`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
+`/graph`, `/tree-warning`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
 `/loop/search`, `/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
 dependency direction is **capabilities → accelerator** (never the reverse), which
 keeps governance out of the commodity layer.

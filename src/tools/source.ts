@@ -1,3 +1,4 @@
+import { observeTreeTruncation } from '../tree-warning.js';
 import { z } from 'zod';
 import type { ToolHost } from '../permissions.js';
 import { contextStore, grepSource, warmSource, wrapWithCache } from '@verevoir/context';
@@ -106,7 +107,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Fetch the full file tree for a source (local path, GitHub repo, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag.',
+        'Fetch the full file tree for a source (local path, GitHub repo, or Notion page tree) in one call — the fastest way to orient in an unfamiliar repo. May be large for big repos; use list_files for narrower scopes. Returns RepoTree with entries[] and a truncated flag. A truncated tree appends a second text content block warning that results may be incomplete.',
       inputSchema: {
         sourceUrl: z
           .string()
@@ -118,10 +119,11 @@ export function registerSourceTools(server: ToolHost): void {
     },
     async ({ sourceUrl, ref }) => {
       sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
-      const adapter = await pickSourceAdapter(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
+      const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
       const result = await adapter.getRepoTree(env, sourceUrl, ref);
-      return { content: [{ type: 'text', text: jsonText(result) }] };
+      return { content: [{ type: 'text', text: jsonText(result) }, ...observed.warnings()] };
     }
   );
 
@@ -133,7 +135,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Search file contents for a pattern across an entire source on demand. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context.',
+        'Search file contents for a pattern across an entire source on demand. Scans the whole tree (skipping vendored / build dirs), pulling files into the shared cache as it goes — no need to read files first. Prefer over shell grep for project files. Returns GrepHit[] with line + context. A truncated tree appends a second text content block warning that results may be incomplete.',
       inputSchema: {
         sourceUrl: z
           .string()
@@ -153,14 +155,15 @@ export function registerSourceTools(server: ToolHost): void {
     },
     async ({ sourceUrl, pattern, ref, ignoreCase, maxResults }) => {
       sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
-      const adapter = await pickSourceAdapter(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
+      const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
       const result = await grepSource(adapter, env, sourceUrl, pattern, {
         ref,
         ignoreCase,
         maxResults,
       });
-      return { content: [{ type: 'text', text: jsonText(result) }] };
+      return { content: [{ type: 'text', text: jsonText(result) }, ...observed.warnings()] };
     }
   );
 
@@ -172,7 +175,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Find where a named function, class, method, interface, type, or enum is defined — scans the whole source on demand, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range.',
+        'Find where a named function, class, method, interface, type, or enum is defined — scans the whole source on demand, tree-sitter-parsing files into the shared cache as it goes (no need to read files first). Prefer over guessing or shell-grepping for definitions. Returns SymbolHit[] with file path and line range. A truncated tree appends a second text content block warning that results may be incomplete.',
       inputSchema: {
         sourceUrl: z
           .string()
@@ -194,7 +197,8 @@ export function registerSourceTools(server: ToolHost): void {
     },
     async ({ sourceUrl, name, ref, kind }) => {
       sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
-      const adapter = await pickSourceAdapter(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
+      const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
       await warmSource(adapter, env, sourceUrl, { ref });
       const hits = findSymbols(name, {
@@ -202,7 +206,7 @@ export function registerSourceTools(server: ToolHost): void {
       });
       const filtered = kind ? hits.filter((h) => h.kind === kind) : hits;
       return {
-        content: [{ type: 'text', text: jsonText(filtered) }],
+        content: [{ type: 'text', text: jsonText(filtered) }, ...observed.warnings()],
       };
     }
   );
@@ -617,7 +621,7 @@ export function registerSourceTools(server: ToolHost): void {
     {
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved to symbols defined in this source), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions.",
+        "Return a symbol's neighbourhood in the code graph: where it's defined, what calls it, what it calls (resolved to symbols defined in this source), and which files import it — the relationships you can't get by reading a single file. Use it for 'who uses X' / 'what does X depend on' / 'what would changing X affect' without reading the tree. Approximate: edges are name-based (no type resolution), so a common name may have several definitions. A truncated tree appends a second text content block warning that results may be incomplete.",
       inputSchema: {
         sourceUrl: z
           .string()
@@ -635,14 +639,15 @@ export function registerSourceTools(server: ToolHost): void {
     },
     async ({ sourceUrl, symbol, ref }) => {
       sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
-      const adapter = await pickSourceAdapter(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
+      const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
       await warmSource(adapter, env, sourceUrl, { ref });
       const text = renderNeighbourhood(
         buildNeighbourhood(contextStore, sourceUrl, ref ?? '', symbol),
         sourceUrl
       );
-      return { content: [{ type: 'text', text }] };
+      return { content: [{ type: 'text', text }, ...observed.warnings()] };
     }
   );
 }
