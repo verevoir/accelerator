@@ -113,10 +113,10 @@ same variable for its own GitHub client), and where `gh` is absent — the runti
 container image has no `gh` — the call fails naming `GITHUB_TOKEN` rather than
 surfacing an exec error from the middle of a tool call.
 
-## Tools it registers (22)
+## Tools it registers
 
 **Source** (cached + tree-sitter indexed via `@verevoir/context`): `read_file`,
-`list_files`, `get_repo_tree`, `grep`, `find_symbol`, `code_graph`, `write_file`,
+`list_files`, `get_repo_tree`, `grep`, `find_symbol`, `code_graph`, `refresh_source`, `write_file`,
 `edit_file`, `multi_edit`, `insert`, `delete_block`, `commit_files`, `ensure_fork`,
 `ensure_branch`, `open_pull_request`.
 **Work tracker** (via `@verevoir/workflows`): `list_cards`, `get_card`,
@@ -125,6 +125,15 @@ surfacing an exec error from the middle of a tool call.
 
 Prefer these over built-in filesystem/shell tools so the shared read cache +
 symbol index stay correct across a session.
+
+Use `refresh_source({ sourceUrl, ref? })` after out-of-band changes such as a
+submodule update. It drops cached content, symbols, and graph edges for exactly
+that source and ref; omitting `ref` clears only the default-ref cache. Other
+sources and refs stay warm. Refresh is idempotent, requires no backend credentials,
+and changes no source files, so it is available in the `read` permission class.
+For file:// input, refresh clears both that exact URL and its decoded path for
+the selected ref. Other path spellings are separate identities; pass the spelling
+used by the reads you want to refresh.
 
 Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
 

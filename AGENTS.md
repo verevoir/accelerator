@@ -14,7 +14,7 @@ capabilities → accelerator, never the reverse.
   architecture-conformance checks over the graph), `tiers.ts` / `registry.ts` / `metering.ts` (the
   LLM binding), `audit.ts` / `otlp.ts` (telemetry), `http.ts` (the streamable-HTTP shared-cache server), `loop/*` (raw refine/search/eval primitives).
 - `src/tools/` — MCP tool registrations: `source.ts` (read/list/tree/grep/find_symbol/
-  code_graph/write/edit/multi_edit/insert/delete_block/commit_files/fork/branch/PR), `workflow.ts`
+  code_graph/refresh_source/write/edit/multi_edit/insert/delete_block/commit_files/fork/branch/PR), `workflow.ts`
   (board CRUD).
 - `src/pi.ts` + `src/permissions.ts` — the **pi-coding-agent plugin** entry and its
   annotation-driven permissions scope. `package.json`'s `pi.extensions` points at `dist/pi.js`;

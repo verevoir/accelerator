@@ -10,6 +10,12 @@ import { registerWorkflowTools } from '../src/tools/workflow.js';
 // so a host that dedups a retry would silently drop a write. This asserts the exact
 // expected hints for every registered tool — one named case per tool.
 const EXPECTED: Record<string, Record<string, boolean>> = {
+  refresh_source: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
   // Reads — safe to auto-allow; reach GitHub/Notion so open-world.
   read_file: { readOnlyHint: true, openWorldHint: true },
   list_files: { readOnlyHint: true, openWorldHint: true },

@@ -40,13 +40,21 @@ split: commodity server gets the code/board keys, the moat gets the model keys.
 
 Public repos / local paths need no token; tokens gate private sources + writes.
 
-## Tools (22)
+## Tools
 
 Source (cached, tree-sitter indexed): read_file, list_files, get_repo_tree, grep,
-find_symbol, code_graph, write_file, edit_file, multi_edit, insert, delete_block,
+find_symbol, code_graph, refresh_source, write_file, edit_file, multi_edit, insert, delete_block,
 commit_files, ensure_fork, ensure_branch, open_pull_request. Work tracker: list_cards, get_card, create_card, update_card,
 move_card, list_columns, list_comments, add_comment. Prefer these over built-in
 filesystem/shell so the shared cache + index stay correct.
+
+refresh_source({ sourceUrl, ref? }) clears cached content, symbols, and graph
+edges after out-of-band edits. Omit ref to clear only the default-ref cache;
+other refs and sources remain cached. No backend fetches or source writes; it
+is idempotent and belongs to the read permission class.
+For file:// input, refresh clears both that exact URL and its decoded path for
+the selected ref. Other path spellings are separate identities; pass the spelling
+used by the reads you want to refresh.
 
 grep is lazy (via @verevoir/context 0.14): it reads the source in deterministic
 order and stops once maxResults matches are settled, warming only the files it
