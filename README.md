@@ -126,12 +126,26 @@ surfacing an exec error from the middle of a tool call.
 Prefer these over built-in filesystem/shell tools so the shared read cache +
 symbol index stay correct across a session.
 
+Local source paths, trailing-slash spellings, file:// URLs, and symlink aliases
+share one canonical cache identity across source tools. Existing roots use the
+real filesystem path; missing roots use an absolute lexical path until created.
+Other filesystem errors propagate. Remote source URLs are preserved unchanged.
+Async tools use normalizeSourceUrlAsync from the source-url subpath to resolve
+paths without blocking the event loop. Its five-second timeout bounds only the
+path lookup promise, not the complete tool operation. Node cannot cancel the
+underlying realpath syscall: timed-out lookups may keep shared threadpool workers
+occupied and delay other filesystem requests. No path mappings are memoized.
+The synchronous compatibility exports normalizeSourceUrl, queryCodeGraph and
+invalidateWrittenFile can block indefinitely while resolving local aliases;
+the async timeout does not apply to them. The cache subpath also exposes
+invalidateCanonicalWrittenFile for identities already resolved before a write.
+
 Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
 
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,
-`/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
+`/source-url`, `/router`, `/audit`, `/metering`, `/result`, `/edit`, `/cache`, `/mutate`, `/http`,
 `/graph`, `/tree-warning`, `/architecture`, `/manifest`, `/instructions`, `/loop/evals`, `/loop/refine`,
 `/loop/search`, `/tools/source`, `/tools/workflow`. `@verevoir/capabilities` imports these; the
 dependency direction is **capabilities → accelerator** (never the reverse), which

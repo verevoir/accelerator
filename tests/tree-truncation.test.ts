@@ -3,6 +3,7 @@ import type { SourceAdapter } from '@verevoir/sources';
 import type { ToolHost } from '../src/permissions.js';
 import { fs as realFs } from '@verevoir/context/fs';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -62,6 +63,13 @@ describe.each(tools)('%s tree completeness', (tool) => {
       warning: `⚠ tree truncated at 1 entries [${dir}]; results may be incomplete. Use list_files to inspect narrower directories.`,
       walks: 1,
     });
+  });
+  it('labels warnings with the canonical identity when called through a file URL', async () => {
+    fixture(true);
+    const result = await handlers[tool]({ ...args(), sourceUrl: pathToFileURL(dir).href });
+    expect(result.content[1]?.text).toBe(
+      `⚠ tree truncated at 1 entries [${dir}]; results may be incomplete. Use list_files to inspect narrower directories.`
+    );
   });
   it('preserves the first result and adds nothing when the same tree is complete', async () => {
     fixture(false);

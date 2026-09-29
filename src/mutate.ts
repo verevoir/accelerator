@@ -1,3 +1,4 @@
+import { normalizeSourceUrlAsync } from './source-url.js';
 import { pickSourceAdapter, resolveSourceEnv } from './router.js';
 import {
   applyEdit,
@@ -6,12 +7,12 @@ import {
   applyDeleteBlock,
   type EditResult,
 } from './edit.js';
-import { invalidateWrittenFile } from './cache.js';
+import { invalidateCanonicalWrittenFile } from './cache.js';
 import { contextStore, type ContextStore } from '@verevoir/context';
 
 /**
  * Write a file's full contents to a source, then invalidate the read cache
- * (dual-scope, via `invalidateWrittenFile`). `branch`/`commitMessage` are the
+ * (dual-scope, via `invalidateCanonicalWrittenFile`). `branch`/`commitMessage` are the
  * already-resolved `commitArgs` — empty for filesystem + Notion, required for
  * GitHub — so callers keep the "GitHub requires a branch" invariant at the tool
  * boundary. `store` is the cache to invalidate; it defaults to the shared
@@ -25,16 +26,17 @@ export async function writeSourceFile(
   commitMessage: string,
   store: ContextStore = contextStore
 ): Promise<void> {
+  sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
   const adapter = await pickSourceAdapter(sourceUrl);
   const env = resolveSourceEnv(sourceUrl);
   await adapter.writeFile(env, sourceUrl, path, content, branch, commitMessage);
-  invalidateWrittenFile(sourceUrl, path, branch, store);
+  invalidateCanonicalWrittenFile(sourceUrl, path, branch, store);
 }
 
 /**
  * The multi-file twin of `writeSourceFile`: commit `files` together via the
  * adapter's `commitFiles`, then invalidate the read cache for each written file
- * (dual-scope, via `invalidateWrittenFile`). `files` is the already-built set,
+ * (dual-scope, via `invalidateCanonicalWrittenFile`). `files` is the already-built set,
  * so it skips the read→apply→write cycle the string-edit ops use. The
  * invalidation runs only after a successful commit — so a failed (possibly
  * partial) commit leaves the cache untouched, as the sibling ops do.
@@ -48,11 +50,12 @@ export async function commitFilesSource(
   commitMessage: string,
   store: ContextStore = contextStore
 ): Promise<void> {
+  sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
   const adapter = await pickSourceAdapter(sourceUrl);
   const env = resolveSourceEnv(sourceUrl);
   await adapter.commitFiles(env, sourceUrl, branch, files, commitMessage);
   for (const { path } of files) {
-    invalidateWrittenFile(sourceUrl, path, branch, store);
+    invalidateCanonicalWrittenFile(sourceUrl, path, branch, store);
   }
 }
 
@@ -70,12 +73,13 @@ async function mutateSourceFile(
   commitMessage: string,
   store: ContextStore = contextStore
 ): Promise<{ replacements: number }> {
+  sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
   const adapter = await pickSourceAdapter(sourceUrl);
   const env = resolveSourceEnv(sourceUrl);
   const { content } = await adapter.readFile(env, sourceUrl, path, branch || undefined);
   const result = apply(content);
   await adapter.writeFile(env, sourceUrl, path, result.content, branch, commitMessage);
-  invalidateWrittenFile(sourceUrl, path, branch, store);
+  invalidateCanonicalWrittenFile(sourceUrl, path, branch, store);
   return { replacements: result.replacements };
 }
 

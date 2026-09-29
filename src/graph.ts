@@ -1,3 +1,4 @@
+import { normalizeSourceUrl } from './source-url.js';
 import { contextStore } from '@verevoir/context';
 import { detectLanguage, edgesForItem, parseSymbols } from '@verevoir/context/code';
 import type { ContextStore, SymbolEntry } from '@verevoir/context';
@@ -169,10 +170,12 @@ export function renderNeighbourhood(nb: Neighbourhood, sourceUrl: string): strin
 }
 
 // ---------------------------------------------------------------------------
-// Convenience wrapper used by the MCP tool (uses the singleton store)
+// Synchronous library wrapper over the singleton store. Local alias resolution
+// can block indefinitely; MCP handlers resolve asynchronously before build/render.
 // ---------------------------------------------------------------------------
 
 export function queryCodeGraph(sourceUrl: string, version: string, symbol: string): string {
+  sourceUrl = normalizeSourceUrl(sourceUrl);
   const nb = buildNeighbourhood(contextStore, sourceUrl, version, symbol);
   return renderNeighbourhood(nb, sourceUrl);
 }

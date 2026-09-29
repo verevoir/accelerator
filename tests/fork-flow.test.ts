@@ -1,3 +1,7 @@
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -122,4 +126,52 @@ describe('fork-isolated write-flow tools (STDIO-409)', () => {
       harness().ensure_fork({ sourceUrl: 'https://github.com/owner/repo' })
     ).rejects.toThrow(/forkRepo failed/);
   });
+});
+
+// These operations remain unsupported by the real local adapter. At the tool
+// boundary, aliases must still resolve before adapter routing and same-repo detection.
+describe('canonical source arguments at the git adapter boundary', () => {
+  const files = [{ path: 'entry.ts', content: 'new content' }];
+  it.each([
+    { tool: 'ensure_fork', method: 'ensureFork', args: {}, expected: [] },
+    {
+      tool: 'ensure_branch',
+      method: 'ensureBranch',
+      args: { branch: 'feature' },
+      expected: ['feature'],
+    },
+    {
+      tool: 'commit_files',
+      method: 'commitFiles',
+      args: { files, branch: 'feature', commitMessage: 'update' },
+      expected: ['feature', files, 'update'],
+    },
+    {
+      tool: 'open_pull_request',
+      method: 'openPullRequest',
+      args: { branch: 'feature', base: 'main', title: 't', body: 'b' },
+      expected: ['feature', 'main', 't', 'b'],
+    },
+  ] as const)(
+    '$tool routes canonical aliases to the adapter',
+    async ({ tool, method, args, expected }) => {
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), 'git-alias-')));
+      const alias = join(dir, 'alias');
+      symlinkSync(dir, alias);
+      const url = pathToFileURL(alias).href + '/';
+      const a = { ...adapter(), commitFiles: vi.fn(async () => undefined) };
+      vi.mocked(pickSourceAdapter).mockResolvedValue(a as never);
+      try {
+        await harness()[tool]({
+          sourceUrl: url,
+          workingUrl: tool === 'open_pull_request' ? dir + '/' : url,
+          ...args,
+        });
+        expect(a[method]).toHaveBeenCalledWith(env, dir, ...expected);
+        expect(vi.mocked(pickSourceAdapter).mock.calls).toEqual([[dir]]);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  );
 });

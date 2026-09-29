@@ -1,7 +1,7 @@
 import { observeTreeTruncation } from '../tree-warning.js';
 import { z } from 'zod';
 import type { ToolHost } from '../permissions.js';
-import { grepSource, warmSource, wrapWithCache } from '@verevoir/context';
+import { contextStore, grepSource, warmSource, wrapWithCache } from '@verevoir/context';
 import { findSymbols } from '@verevoir/context/code';
 import { pickSourceAdapter, resolveSourceEnv } from '../router.js';
 import {
@@ -12,17 +12,10 @@ import {
   deleteBlockSourceFile,
   commitFilesSource,
 } from '../mutate.js';
-import { queryCodeGraph } from '../graph.js';
+import { buildNeighbourhood, renderNeighbourhood } from '../graph.js';
 import { jsonText } from '../result.js';
-import { fileURLToPath } from 'node:url';
-
-// A `file://` URL and the bare absolute path it denotes must resolve to the
-// SAME cache key, or warm-then-query mismatches (find_symbol / code_graph warm
-// under one form and query under the other → 0 hits). Normalise `file://` to
-// the bare path so both halves agree. GitHub / Notion URLs pass through.
-export function normalizeSourceUrl(sourceUrl: string): string {
-  return sourceUrl.startsWith('file://') ? fileURLToPath(sourceUrl) : sourceUrl;
-}
+import { normalizeSourceUrlAsync } from '../source-url.js';
+export { normalizeSourceUrl } from '../source-url.js';
 
 // `branch` + `commitMessage` are needed only for GitHub commits; filesystem and
 // Notion writes ignore them. Validate that here so the tool schemas can mark
@@ -70,6 +63,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, path, ref }) => {
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = wrapWithCache(await pickSourceAdapter(sourceUrl));
       const env = resolveSourceEnv(sourceUrl);
       const result = await adapter.readFile(env, sourceUrl, path, ref);
@@ -97,6 +91,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, prefix, ref }) => {
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       const result = await adapter.listFiles(env, sourceUrl, prefix ?? '', ref);
@@ -123,6 +118,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, ref }) => {
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
       const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
@@ -158,6 +154,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, pattern, ref, ignoreCase, maxResults }) => {
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
       const { adapter } = observed;
       const env = resolveSourceEnv(sourceUrl);
@@ -199,13 +196,13 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, name, ref, kind }) => {
-      const src = normalizeSourceUrl(sourceUrl);
-      const observed = observeTreeTruncation(await pickSourceAdapter(src));
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
       const { adapter } = observed;
-      const env = resolveSourceEnv(src);
-      await warmSource(adapter, env, src, { ref });
+      const env = resolveSourceEnv(sourceUrl);
+      await warmSource(adapter, env, sourceUrl, { ref });
       const hits = findSymbols(name, {
-        sources: [{ sourceId: src, version: ref ?? '' }],
+        sources: [{ sourceId: sourceUrl, version: ref ?? '' }],
       });
       const filtered = kind ? hits.filter((h) => h.kind === kind) : hits;
       return {
@@ -549,6 +546,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl }) => {
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       const workingUrl = await adapter.ensureFork(env, sourceUrl);
@@ -575,6 +573,7 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ workingUrl, branch }) => {
+      workingUrl = await normalizeSourceUrlAsync(workingUrl);
       const adapter = await pickSourceAdapter(workingUrl);
       const env = resolveSourceEnv(workingUrl);
       await adapter.ensureBranch(env, workingUrl, branch);
@@ -602,6 +601,8 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, workingUrl, branch, base, title, body }) => {
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
+      workingUrl = await normalizeSourceUrlAsync(workingUrl);
       const adapter = await pickSourceAdapter(sourceUrl);
       const env = resolveSourceEnv(sourceUrl);
       // Same repo for source + working → a same-repo PR (head is just the
@@ -637,12 +638,15 @@ export function registerSourceTools(server: ToolHost): void {
       },
     },
     async ({ sourceUrl, symbol, ref }) => {
-      const src = normalizeSourceUrl(sourceUrl);
-      const observed = observeTreeTruncation(await pickSourceAdapter(src));
+      sourceUrl = await normalizeSourceUrlAsync(sourceUrl);
+      const observed = observeTreeTruncation(await pickSourceAdapter(sourceUrl));
       const { adapter } = observed;
-      const env = resolveSourceEnv(src);
-      await warmSource(adapter, env, src, { ref });
-      const text = queryCodeGraph(src, ref ?? '', symbol);
+      const env = resolveSourceEnv(sourceUrl);
+      await warmSource(adapter, env, sourceUrl, { ref });
+      const text = renderNeighbourhood(
+        buildNeighbourhood(contextStore, sourceUrl, ref ?? '', symbol),
+        sourceUrl
+      );
       return { content: [{ type: 'text', text }, ...observed.warnings()] };
     }
   );

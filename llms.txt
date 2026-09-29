@@ -48,6 +48,20 @@ commit_files, ensure_fork, ensure_branch, open_pull_request. Work tracker: list_
 move_card, list_columns, list_comments, add_comment. Prefer these over built-in
 filesystem/shell so the shared cache + index stay correct.
 
+Local source paths, trailing-slash spellings, file:// URLs, and symlink aliases
+share one canonical cache identity across source tools. Existing roots use the
+real filesystem path; missing roots use an absolute lexical path until created.
+Other filesystem errors propagate. Remote source URLs are preserved unchanged.
+Async tools use normalizeSourceUrlAsync from the source-url subpath to resolve
+paths without blocking the event loop. Its five-second timeout bounds only the
+path lookup promise, not the complete tool operation. Node cannot cancel the
+underlying realpath syscall: timed-out lookups may keep shared threadpool workers
+occupied and delay other filesystem requests. No path mappings are memoized.
+The synchronous compatibility exports normalizeSourceUrl, queryCodeGraph and
+invalidateWrittenFile can block indefinitely while resolving local aliases;
+the async timeout does not apply to them. The cache subpath also exposes
+invalidateCanonicalWrittenFile for identities already resolved before a write.
+
 grep is lazy (via @verevoir/context 0.14): it reads the source in deterministic
 order and stops once maxResults matches are settled, warming only the files it
 reads — a small query no longer touches every file; the hits are identical to a
@@ -81,7 +95,7 @@ Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` appe
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath: @verevoir/accelerator/tiers,
-/router, /audit, /metering, /result, /edit, /cache, /mutate, /http, /graph, /tree-warning, /architecture, /manifest,
+/source-url, /router, /audit, /metering, /result, /edit, /cache, /mutate, /http, /graph, /tree-warning, /architecture, /manifest,
 /instructions, /loop/evals, /loop/refine, /loop/search, /tools/source,
 /tools/workflow. @verevoir/capabilities imports these.
 
