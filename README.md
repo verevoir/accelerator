@@ -128,6 +128,10 @@ symbol index stay correct across a session.
 
 Tree completeness: `get_repo_tree`, `grep`, `find_symbol`, and `code_graph` append a warning text block when the source adapter reports a truncated tree, including its returned entry count and source. The first result block is unchanged; no extra tree traversal is performed. A query with no matches may still be incomplete. Use `list_files` for narrower directory inspection.
 
+### Companion tool guidance
+
+Standalone accelerator instructions refer only to its commodity tool surface. A host composing accelerator with other servers can pass `createServer({ registeredTools: ['provision', 'find_governance'] })` using the exact tool names registered and visible to the client. Guidance is selected independently for each named companion tool; omitted tools receive no instructions. The option does not register tools or discover other MCP servers. Library callers can pass the same options as the second argument of `loadInstructions(path, options)`.
+
 ## Library (subpath exports)
 
 Every compiled module is importable by subpath — `@verevoir/accelerator/tiers`,

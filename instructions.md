@@ -5,25 +5,6 @@ Verevoir is the front door for reading and writing files, code, and project cont
 - **Writes — always through the MCP.** Make every change to a covered `sourceUrl` / `boardUrl` with `write_file` / `edit_file` (or the card tools). A write that goes around them — shell redirection, `sed -i`, or the built-in Edit/Write on a covered path — leaves the shared cache stale and _wrong_ for the rest of the session, so later reads and searches serve pre-write content. This is the firm rule: never edit a covered file out-of-band.
 - **Reads — prefer the MCP.** Use `read_file` / `grep` / `find_symbol` over the built-in Read / `cat` / shell `grep` / `find` / `ls`. A bypassed read is less costly than a bypassed write — it only misses the cache + index benefit (slower, duplicate fetches, no Notion) rather than corrupting state — but the MCP is still the default whenever a `sourceUrl` fits.
 
-## Before you change code, consult the bar
-
-Before you implement, write, or change code, call **`provision`** with a short description of the work. Treat this as a precondition for the change, the same way writing through the MCP is: skip it and your code is judged against standards you never read.
-
-It returns, in one call as text, the **foundational floor practices in full** plus a **menu of the concern practices** (each a one-line summary). You see the whole task, so you narrow better than any isolated classifier: **pick the concerns that apply and call `provision` again with `concerns: ['id', …]`** to pull their full text alongside the floor — a complete frame you can also hand to a worker. (`find_governance` is still there for browsing the wider record; `provision` is the triggered shortcut for "what am I held to for _this_.")
-
-If you hand the work to another model, the bar must travel with it — a floor worker won't fetch it itself. The **`delegate`** tool does this for you by default (it provisions the worker's task and carries the frame into its prompt); for a sub-agent you spawn another way, pass a provisioned frame in its prompt yourself. A weak/headless caller with no coordinator to narrow can pass `autoTag: true` to have `provision` select the concerns in-MCP instead of returning a menu.
-
-## Before you generate substantial work — route it, don't hand-write it
-
-This is a precondition, the same way consulting the bar is: **the moment you're about to produce a substantial amount of output yourself — anything past a small, surgical edit — stop and hand it down.** The trigger is the _volume of what you're about to generate_, NOT whether it "feels mechanical." Careful, high-stakes, coupled generation is not the exception to this — it is the most valuable work to route.
-
-- **Capability-shaped work → `enact_capability`.** If a capability covers it (converting a design system to tokens, scaffolding a service, a discovery pass), name the capability + a directive: it loads the done-well, provisions the bar, produces on the worker tier, and verifies (the capability's gate where it declares one, plus a review), looping until it passes. One door — the tiering and verify are structural, so you never hand-write capability work.
-- **Free-form bulk → `delegate` / `dispatch`.** A bounded sub-task, or a whole task a worker drives, on a cheaper tier with the bar carried in. A sub-agent you spawn any other way inherits _your_ tier — faster, not cheaper, and unheld to any bar.
-
-**"It's too coupled / too careful to delegate" is the trap — it's the signal to _decompose_, not to self-generate.** Cross-file consistency, a shared vocabulary N outputs must agree on, output that's expensive to verify by eye: that instinct to keep it yourself is exactly where the substrate earns its place. Force a shared **scaffold** stage first that **documents the common contract** — the token file, the schema, the class vocabulary the variants must agree on — then make each variant a leaf that references that documented contract. The coupling doesn't vanish: it **relocates into one explicit, documented contract** the leaves read, instead of implicit consistency each leaf must maintain against all the others. So each leaf is narrow, delegatable, and parallel (it reads the contract, not its siblings), and the **gate verifies every leaf against the documented contract** deterministically. The work that feels un-delegatable is precisely what enacting makes safe: the decomposition turns hidden coupling into an explicit contract, and the gate enforces it.
-
-Rule of thumb: **the reasoning, the decomposition, and the decision of what to hand off stay with you; every substantial _produce_ goes to `enact_capability` (capability-shaped) or `delegate` / `dispatch` (free-form bulk).** Keep truly inline only the small surgical edits and the coordination itself.
-
 ## One surface, auto-routed by URL
 
 The same tools work uniformly across:

@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerSourceTools } from './tools/source.js';
 import { registerWorkflowTools } from './tools/workflow.js';
-import { loadInstructions } from './instructions.js';
+import { loadInstructions, type InstructionOptions } from './instructions.js';
 import { loadManifest, composeInstructions } from './manifest.js';
 
 /** Construct and configure the accelerator MCP server — the commodity dev-tool
@@ -15,13 +15,13 @@ import { loadManifest, composeInstructions } from './manifest.js';
  * imports them (`@verevoir/accelerator/tiers`, `/router`, `/audit`, …) rather
  * than re-implementing them — the `capabilities -> accelerator` dependency
  * direction that keeps governance out of the commodity layer. */
-export async function createServer(): Promise<McpServer> {
+export async function createServer(options: InstructionOptions = {}): Promise<McpServer> {
   const server = new McpServer(
     { name: 'verevoir-accelerator', version: '0.1.0' },
     // Server-level guidance the client injects on connect — steers an agent to
     // prefer these cached, indexed tools over its built-in filesystem/shell.
     // No manifest (aigency.json) -> the universal doctrine only.
-    { instructions: composeInstructions(loadInstructions(), loadManifest()) }
+    { instructions: composeInstructions(loadInstructions(undefined, options), loadManifest()) }
   );
 
   registerSourceTools(server);
